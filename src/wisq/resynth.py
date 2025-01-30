@@ -404,8 +404,28 @@ if __name__ == "__main__":
         description="What the program does",
         epilog="Text at the bottom of help",
     )
-    parser.add_argument("--bqskit", action=argparse.BooleanOptionalAction)
-    parser.add_argument("--bqskit_auto_workers", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--bqskit",
+        action=argparse.BooleanOptionalAction,
+        help="Use BQSKit (initialize BQSKit compiler instance). Not necessary if using some other resynthesis algorithm (e.g. Synthetiq).",
+    )
+    parser.add_argument(
+        "--bqskit_auto_workers",
+        action=argparse.BooleanOptionalAction,
+        help="[Recommended] Use BQSKit default mechanism for determining how many workers to spin up",
+    )
+    parser.add_argument(
+        "--path_to_synthetiq",
+        type=str,
+        help="Absolute path to Synthetiq `main` binary",
+        default=os.path.join(LIB_DIR, "synthetiq", "bin", "main"),
+    )
+
     args = parser.parse_args()
 
-    start_server(args.bqskit, args.bqskit_auto_workers)
+    start_server(
+        args.bqskit,
+        args.bqskit_auto_workers,
+        verbose=True,
+        path_to_synthetiq=args.path_to_synthetiq,
+    )
