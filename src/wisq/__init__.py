@@ -14,6 +14,11 @@ from .utils import create_scratch_dir
 import os
 import shutil
 import json
+import threading
+import time
+import multiprocessing
+from termcolor import colored
+from tqdm import tqdm
 
 
 OPT_MODE = "opt"
@@ -47,7 +52,6 @@ class Guoq_Help_Action(argparse.Action):
         print_help()
         parser.exit()
 
-
 def map_and_route(
     input_path: str, arch_name: str, output_path: str, timeout: int, mode="dascot"
 ):
@@ -62,28 +66,56 @@ def map_and_route(
         or the path to a text file containing the description of a custom architecture
         timeout: Total timeout in seconds for both mapping and routing.
 
-
     Writes a JSON representing
     the scheduled circuit after mapping and routing to output_path.
     """
-    circ = QuantumCircuit.from_qasm_file(input_path)
-    gates, ops = extract_gates_from_file(input_path)
-    id_to_op = {i: ops[i] for i in range(len(ops))}
-    total_qubits = len(extract_qubits_from_gates(gates))
-    circ = QuantumCircuit.from_qasm_file(input_path)
-    if arch_name == "square_sparse_layout":
-        arch = square_sparse_layout(total_qubits, magic_states="all_sides")
-    elif arch_name == "compact_layout":
-        arch = compact_layout(total_qubits, magic_states="all_sides")
-    else:
-        with open(arch_name) as f:
-            arch = ast.literal_eval(f.read())
-    if mode == "dascot":
-        map, steps = run_dascot(circ, gates, arch, output_path, timeout)
-    elif mode == "sat":
-        map, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
-    dump(arch, map, steps, id_to_op, output_path, gates)
 
+    def run_task(done_event):
+        try:
+            circ = QuantumCircuit.from_qasm_file(input_path)
+            gates, ops = extract_gates_from_file(input_path)
+            id_to_op = {i: ops[i] for i in range(len(ops))}
+            total_qubits = len(extract_qubits_from_gates(gates))
+            circ = QuantumCircuit.from_qasm_file(input_path)
+
+            if arch_name == "square_sparse_layout":
+                arch = square_sparse_layout(total_qubits, magic_states="all_sides")
+            elif arch_name == "compact_layout":
+                arch = compact_layout(total_qubits, magic_states="all_sides")
+            else:
+                with open(arch_name) as f:
+                    arch = ast.literal_eval(f.read())
+            if mode == "dascot":
+                map_result, steps = run_dascot(circ, gates, arch, output_path, timeout)
+            elif mode == "sat":
+                map_result, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
+
+            # Dump results
+            dump(arch, map_result, steps, id_to_op, output_path, gates)
+        finally:
+            done_event.set()
+
+    if timeout <= 0:
+        # No progress bar needed
+        run_task(multiprocessing.Event())
+        return
+
+    # Run in a separate process
+    done = multiprocessing.Event()
+    process = multiprocessing.Process(target=run_task, args=(done,))
+    process.start()
+
+    with tqdm(total=timeout, desc="Mapping & Routing", unit="s") as pbar:
+        elapsed = 0
+        while not done.is_set() and elapsed < timeout:
+            time.sleep(1)
+            elapsed += 1
+            pbar.update(1)
+        # Complete bar if finished early
+        if elapsed < timeout:
+            pbar.update(timeout - elapsed)
+
+    process.join()
 
 def optimize(
     input_path: str,
@@ -105,21 +137,57 @@ def optimize(
         target_gateset: Target gateset to optimize the circuit to.
         timeout: Timeout in seconds. If set to 0, only transpiles and performs no optimization.
         approximation_epsilon: Approximation epsilon to use.
-        advanced_args: Dictionary containing advanced arguments to pass to GUOQ, overriding default values except `-out` and `-job`. `guoq.print_help` displays available options.
-        For example, if we want to override the default for `--rules` and use the `--remove-size-preserving-rules` flag, the dictionary would be `{"--rules": "file.txt", "--remove-size-preserving-rules": None}`.
+        advanced_args: Dictionary containing advanced arguments to pass to GUOQ, overriding default values except `-out` and `-job`.
         verbose: Whether to print verbose output.
     """
-    run_guoq(
-        input_path,
-        output_path,
-        target_gateset,
-        optimization_objective,
-        timeout,
-        approximation_epsilon=approximation_epsilon,
-        args=advanced_args,
-        verbose=verbose,
-        path_to_synthetiq=path_to_synthetiq,
-    )
+    
+    if timeout <= 0:
+        # No progress bar needed
+        run_guoq(
+            input_path,
+            output_path,
+            target_gateset,
+            optimization_objective,
+            timeout,
+            approximation_epsilon=approximation_epsilon,
+            args=advanced_args,
+            verbose=verbose,
+            path_to_synthetiq=path_to_synthetiq,
+        )
+        return
+
+    done = threading.Event()
+
+    def run_task():
+        run_guoq(
+            input_path,
+            output_path,
+            target_gateset,
+            optimization_objective,
+            timeout,
+            approximation_epsilon=approximation_epsilon,
+            args=advanced_args,
+            verbose=verbose,
+            path_to_synthetiq=path_to_synthetiq,
+        )
+        done.set()
+
+    thread = threading.Thread(target=run_task)
+    thread.start()
+
+    # Wall-clock progress bar
+    with tqdm(total=timeout, desc="Optimizing", unit="s") as pbar:
+        elapsed = 0
+        while not done.is_set() and elapsed < timeout:
+            time.sleep(1)
+            elapsed += 1
+            pbar.update(1)
+
+        # If finished early, complete the bar
+        if elapsed < timeout:
+            pbar.update(timeout - elapsed)
+
+    thread.join()
 
 
 def compile_fault_tolerant(
@@ -145,8 +213,8 @@ def compile_fault_tolerant(
             scratch_dir_path, "after_guoq.qasm"
         )
         print(
-            f"Decomposing to Clifford + T (if needed) and optimizing the input circuit with a timeout of {opt_timeout} seconds..."
-        )
+            colored(f"Decomposing to Clifford + T (if needed) and optimizing the input circuit with a timeout of {opt_timeout} seconds...", "red"
+        ))
         optimize(
             input_path,
             transpiled_and_optimized_path,
@@ -157,9 +225,9 @@ def compile_fault_tolerant(
             verbose=verbose,
             path_to_synthetiq=path_to_synthetiq,
         )
-        print(
-            f"Done optimizing. Mapping and routing the optimized circuit with a timeout of {mr_timeout} seconds..."
-        )
+        print(colored(
+            f"Done optimizing. Mapping and routing the optimized circuit with a timeout of {mr_timeout} seconds...", "yellow"))
+ 
         map_and_route(
             transpiled_and_optimized_path,
             arch_name,
@@ -167,15 +235,39 @@ def compile_fault_tolerant(
             mr_timeout,
             mode=mr_solver,
         )
+
+        print(colored("Fault Tolerant Optimization process finished.", "green"))
     finally:
         if os.path.exists(scratch_dir_path):
             shutil.rmtree(scratch_dir_path)
 
 
+ascii_art = r"""
+         .%.%%%.%.
+         %        %%
+         %          .%%%
+       :%.                +=%%
+      %.                      @.
+       %.                     %%.      __      _(_)___  __ _
+      ..                       %.#%.   \ \ /\ / / / __|/ _` |
+      %.                      %+%-+     \ V  V /| \__ \ (_| |
+      :%                      %+ *       \_/\_/ |_|___/\__, |
+         @%.                    %.                        |_|
+           %.                   %
+              %                =.
+              %.               %.
+              %+               #
+              %.               %.
+               %                -
+                 %%%%%%%%%%%%%%%.
+
+"""
+
 def main():
     parser = argparse.ArgumentParser(
         prog="wisq",
-        description="A compiler for quantum circuits. Optimize your circuits and/or map them to a surface code architecture. See README for example usage and documentation.",
+        description=ascii_art + r"""A compiler for quantum circuits. Optimize your circuits and/or map them to a surface code architecture. See README for example usage and documentation.""",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     opt = parser.add_argument_group(title="optimization config")
     scmr = parser.add_argument_group(title="mapping and routing config")
