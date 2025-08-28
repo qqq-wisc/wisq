@@ -78,7 +78,7 @@ def pbar(desc="Running", unit="s"):
             process = multiprocessing.Process(target=runner)
             process.start()
 
-            custom_format = "{l_bar}{bar} {n_fmt}/{total_fmt}s {percentage:3.0f}%"
+            custom_format = "{l_bar}{bar} [{n_fmt}/{total_fmt}s]"
             with tqdm(total=timeout, desc=desc, unit=unit,
                       bar_format=custom_format) as pbar:
                 elapsed = 0
