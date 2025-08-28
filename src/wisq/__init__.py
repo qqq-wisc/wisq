@@ -14,7 +14,6 @@ from .utils import create_scratch_dir
 import os
 import shutil
 import json
-import threading
 import time
 import inspect
 import multiprocessing
