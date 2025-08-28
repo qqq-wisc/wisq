@@ -16,6 +16,7 @@ import shutil
 import json
 import threading
 import time
+import inspect
 import multiprocessing
 from termcolor import colored
 from tqdm import tqdm
@@ -52,6 +53,49 @@ class Guoq_Help_Action(argparse.Action):
         print_help()
         parser.exit()
 
+def pbar(desc="Running", unit="s"):
+    """
+    Decorator that wraps a function so it runs in a separate process with a progress bar.
+    The timeout value is taken from the function's 'timeout' argument at call-time.
+    """
+    def decorator(func):
+        sig = inspect.signature(func)
+
+        def wrapper(*args, **kwargs):
+            # Bind args/kwargs to the function signature so we can extract "timeout"
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            timeout = bound.arguments["timeout"]
+
+            done = multiprocessing.Event()
+
+            def runner():
+                try:
+                    func(*args, **kwargs)
+                finally:
+                    done.set()
+
+            process = multiprocessing.Process(target=runner)
+            process.start()
+
+            custom_format = "{l_bar}{bar} {n_fmt}/{total_fmt}s {percentage:3.0f}%"
+            with tqdm(total=timeout, desc=desc, unit=unit,
+                      bar_format=custom_format) as pbar:
+                elapsed = 0
+                while not done.is_set() and elapsed < timeout:
+                    time.sleep(1)
+                    elapsed += 1
+                    pbar.update(1)
+
+                if elapsed < timeout:
+                    pbar.update(timeout - elapsed)
+
+            process.join()
+        return wrapper
+    return decorator
+
+
+@pbar(desc="Mapping and Routing")
 def map_and_route(
     input_path: str, arch_name: str, output_path: str, timeout: int, mode="dascot"
 ):
@@ -66,57 +110,30 @@ def map_and_route(
         or the path to a text file containing the description of a custom architecture
         timeout: Total timeout in seconds for both mapping and routing.
 
+
     Writes a JSON representing
     the scheduled circuit after mapping and routing to output_path.
     """
+    circ = QuantumCircuit.from_qasm_file(input_path)
+    gates, ops = extract_gates_from_file(input_path)
+    id_to_op = {i: ops[i] for i in range(len(ops))}
+    total_qubits = len(extract_qubits_from_gates(gates))
+    circ = QuantumCircuit.from_qasm_file(input_path)
+    if arch_name == "square_sparse_layout":
+        arch = square_sparse_layout(total_qubits, magic_states="all_sides")
+    elif arch_name == "compact_layout":
+        arch = compact_layout(total_qubits, magic_states="all_sides")
+    else:
+        with open(arch_name) as f:
+            arch = ast.literal_eval(f.read())
+    if mode == "dascot":
+        map, steps = run_dascot(circ, gates, arch, output_path, timeout)
+    elif mode == "sat":
+        map, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
+    dump(arch, map, steps, id_to_op, output_path, gates)
 
-    def run_task(done_event):
-        try:
-            circ = QuantumCircuit.from_qasm_file(input_path)
-            gates, ops = extract_gates_from_file(input_path)
-            id_to_op = {i: ops[i] for i in range(len(ops))}
-            total_qubits = len(extract_qubits_from_gates(gates))
-            circ = QuantumCircuit.from_qasm_file(input_path)
 
-            if arch_name == "square_sparse_layout":
-                arch = square_sparse_layout(total_qubits, magic_states="all_sides")
-            elif arch_name == "compact_layout":
-                arch = compact_layout(total_qubits, magic_states="all_sides")
-            else:
-                with open(arch_name) as f:
-                    arch = ast.literal_eval(f.read())
-            if mode == "dascot":
-                map_result, steps = run_dascot(circ, gates, arch, output_path, timeout)
-            elif mode == "sat":
-                map_result, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
-
-            # Dump results
-            dump(arch, map_result, steps, id_to_op, output_path, gates)
-        finally:
-            done_event.set()
-
-    if timeout <= 0:
-        # No progress bar needed
-        run_task(multiprocessing.Event())
-        return
-
-    # Run in a separate process
-    done = multiprocessing.Event()
-    process = multiprocessing.Process(target=run_task, args=(done,))
-    process.start()
-
-    with tqdm(total=timeout, desc="Mapping & Routing", unit="s") as pbar:
-        elapsed = 0
-        while not done.is_set() and elapsed < timeout:
-            time.sleep(1)
-            elapsed += 1
-            pbar.update(1)
-        # Complete bar if finished early
-        if elapsed < timeout:
-            pbar.update(timeout - elapsed)
-
-    process.join()
-
+@pbar(desc="Optimizing")
 def optimize(
     input_path: str,
     output_path: str,
@@ -137,58 +154,21 @@ def optimize(
         target_gateset: Target gateset to optimize the circuit to.
         timeout: Timeout in seconds. If set to 0, only transpiles and performs no optimization.
         approximation_epsilon: Approximation epsilon to use.
-        advanced_args: Dictionary containing advanced arguments to pass to GUOQ, overriding default values except `-out` and `-job`.
+        advanced_args: Dictionary containing advanced arguments to pass to GUOQ, overriding default values except `-out` and `-job`. `guoq.print_help` displays available options.
+        For example, if we want to override the default for `--rules` and use the `--remove-size-preserving-rules` flag, the dictionary would be `{"--rules": "file.txt", "--remove-size-preserving-rules": None}`.
         verbose: Whether to print verbose output.
     """
-    
-    if timeout <= 0:
-        # No progress bar needed
-        run_guoq(
-            input_path,
-            output_path,
-            target_gateset,
-            optimization_objective,
-            timeout,
-            approximation_epsilon=approximation_epsilon,
-            args=advanced_args,
-            verbose=verbose,
-            path_to_synthetiq=path_to_synthetiq,
-        )
-        return
-
-    done = threading.Event()
-
-    def run_task():
-        run_guoq(
-            input_path,
-            output_path,
-            target_gateset,
-            optimization_objective,
-            timeout,
-            approximation_epsilon=approximation_epsilon,
-            args=advanced_args,
-            verbose=verbose,
-            path_to_synthetiq=path_to_synthetiq,
-        )
-        done.set()
-
-    thread = threading.Thread(target=run_task)
-    thread.start()
-
-    # Wall-clock progress bar
-    with tqdm(total=timeout, desc="Optimizing", unit="s") as pbar:
-        elapsed = 0
-        while not done.is_set() and elapsed < timeout:
-            time.sleep(1)
-            elapsed += 1
-            pbar.update(1)
-
-        # If finished early, complete the bar
-        if elapsed < timeout:
-            pbar.update(timeout - elapsed)
-
-    thread.join()
-
+    run_guoq(
+        input_path,
+        output_path,
+        target_gateset,
+        optimization_objective,
+        timeout,
+        approximation_epsilon=approximation_epsilon,
+        args=advanced_args,
+        verbose=verbose,
+        path_to_synthetiq=path_to_synthetiq,
+    )
 
 def compile_fault_tolerant(
     input_path,
@@ -213,8 +193,9 @@ def compile_fault_tolerant(
             scratch_dir_path, "after_guoq.qasm"
         )
         print(
-            colored(f"Decomposing to Clifford + T (if needed) and optimizing the input circuit with a timeout of {opt_timeout} seconds...", "red"
+            colored(f"Decomposing to Clifford + T (if needed) and optimizing the input circuit with a timeout of {opt_timeout} seconds...", "blue"
         ))
+
         optimize(
             input_path,
             transpiled_and_optimized_path,
@@ -226,7 +207,7 @@ def compile_fault_tolerant(
             path_to_synthetiq=path_to_synthetiq,
         )
         print(colored(
-            f"Done optimizing. Mapping and routing the optimized circuit with a timeout of {mr_timeout} seconds...", "yellow"))
+            f"Done optimizing. Mapping and routing the optimized circuit with a timeout of {mr_timeout} seconds...", "green"))
  
         map_and_route(
             transpiled_and_optimized_path,
@@ -235,8 +216,6 @@ def compile_fault_tolerant(
             mr_timeout,
             mode=mr_solver,
         )
-
-        print(colored("Fault Tolerant Optimization process finished.", "green"))
     finally:
         if os.path.exists(scratch_dir_path):
             shutil.rmtree(scratch_dir_path)
