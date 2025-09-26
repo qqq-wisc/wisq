@@ -1,6 +1,9 @@
 import argparse
 import ast
 from qiskit import QuantumCircuit
+
+from .verification import compare_optimization
+from .resource_estimator import compare_resources
 from .architecture import square_sparse_layout, compact_layout
 from .dascot import (
     extract_gates_from_file,
@@ -14,7 +17,12 @@ from .utils import create_scratch_dir
 import os
 import shutil
 import json
+import sys
+import platform
+from pathlib import Path
 
+BASE_DIR = Path(__file__).parent
+PARAMS_JSON = BASE_DIR / "params" / "params.json"
 
 OPT_MODE = "opt"
 FULL_FT_MODE = "full_ft"
@@ -95,6 +103,8 @@ def optimize(
     advanced_args: dict = None,
     verbose: bool = False,
     path_to_synthetiq: str = None,
+    verify: bool = False,
+    res_est: bool = False,
 ) -> None:
     """
     Use the default GUOQ parameters to optimize a circuit. Recommended for most users. Advanced users can use `advanced_args` to override default values.
@@ -120,6 +130,18 @@ def optimize(
         verbose=verbose,
         path_to_synthetiq=path_to_synthetiq,
     )
+
+    if platform.system().lower().startswith("win"):
+        os.system("cls")
+    else:
+        # ANSI‐capable terminals (Linux, macOS, modern Windows)
+        sys.stdout.write("\033c")
+        sys.stdout.flush()
+
+    if verify:
+        compare_optimization(input_path,output_path)
+    if res_est:
+        compare_resources(str(PARAMS_JSON), input_path, output_path)
 
 
 def compile_fault_tolerant(
@@ -247,6 +269,18 @@ def main():
         help="solver to use for mapping and routing (default: 'dascot')",
         default="dascot",
     )
+
+    parser.add_argument(
+        "--verify", "-vr",
+        action="store_true",
+        help="run a verification and comparison pass on the output circuit"
+    )
+    parser.add_argument(
+        "--resource_estimate", "-re",
+        action="store_true",
+        help="perform resource estimation for the optimized circuit"
+    )
+
     parser.add_argument(
         "--guoq_help", "-gh", help="print GUOQ options", action=Guoq_Help_Action
     )
@@ -286,6 +320,8 @@ def main():
             advanced_args=args.advanced_args,
             verbose=args.verbose,
             path_to_synthetiq=args.abs_path_to_synthetiq,
+            verify=args.verify,
+            res_est=args.resource_estimate
         )
     elif args.mode == FULL_FT_MODE:
         compile_fault_tolerant(

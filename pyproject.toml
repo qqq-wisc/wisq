@@ -21,7 +21,10 @@ dependencies = [
     "pyzx",
     "qiskit>=1.0",
     "rustworkx",
-    "pennylane"
+    "pennylane",
+    "qiskit_aer",
+    "qiskit_ibm_runtime",
+    "qsharp"
 ]
 description = ""
 readme = "README.md"

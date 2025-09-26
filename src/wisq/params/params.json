@@ -1,0 +1,22 @@
+{
+  "errorBudget": 0.001,
+  "qecScheme": {
+    "crossingPrefactor": 0.03,
+    "errorCorrectionThreshold": 0.01,
+    "logicalCycleTime": "(4 * twoQubitGateTime + 2 * oneQubitMeasurementTime) * codeDistance",
+    "name": "surface_code",
+    "physicalQubitsPerLogicalQubit": "2 * codeDistance * codeDistance"
+  },
+  "qubitParams": {
+    "instructionSet": "GateBased",
+    "name": "qubit_gate_ns_e3",
+    "oneQubitGateErrorRate": 0.001,
+    "oneQubitGateTime": "50 ns",
+    "oneQubitMeasurementErrorRate": 0.001,
+    "oneQubitMeasurementTime": "100 ns",
+    "tGateErrorRate": 0.001,
+    "tGateTime": "50 ns",
+    "twoQubitGateErrorRate": 0.001,
+    "twoQubitGateTime": "50 ns"
+  }
+}
