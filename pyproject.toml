@@ -21,7 +21,8 @@ dependencies = [
     "pyzx",
     "qiskit>=1.0",
     "rustworkx",
-    "pennylane"
+    "qualtran @ git+https://github.com/amandashoe/Qualtran.git@06f4b93",
+    "pytest"
 ]
 description = ""
 readme = "README.md"
