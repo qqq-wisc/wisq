@@ -15,7 +15,8 @@ dependencies = [
     "pyzx",
     "qiskit>=1.0",
     "rustworkx",
-    "pennylane"
+    "qualtran @ git+https://github.com/quantumlib/Qualtran.git@fa5a8ec",
+    "pytest"
 ]
 
 authors = [
