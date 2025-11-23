@@ -26,6 +26,7 @@ if missing_deps:
     ).format(", ".join(missing_deps))
     raise RuntimeError(msg)
 
+# Builds dascot_rs module
 setup(
     rust_extensions=[
         RustExtension(
