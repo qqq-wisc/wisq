@@ -1,5 +1,6 @@
 import argparse
 import ast
+from xmlrpc.client import boolean
 from qiskit import QuantumCircuit
 from .architecture import square_sparse_layout, compact_layout
 from .dascot import (
@@ -304,6 +305,13 @@ def main():
         type=float,
         help="integer representing simulated annealing cooling rate for routing (default: 0.5)",
         default=0.5,
+    )
+    scmr.add_argument(
+        "--cache_executable_sets",
+        "-ces",
+        type=boolean,
+        help="Boolean representing whether exrecutbale sets will be cached during routing",
+        default=True,
     )
     parser.add_argument(
         "--guoq_help", "-gh", help="print GUOQ options", action=Guoq_Help_Action
