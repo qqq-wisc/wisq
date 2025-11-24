@@ -1,5 +1,6 @@
 import argparse
 import ast
+from xmlrpc.client import boolean
 from qiskit import QuantumCircuit
 from .architecture import square_sparse_layout, compact_layout
 from .dascot import (
@@ -9,6 +10,7 @@ from .dascot import (
     run_dascot,
     run_sat_scmr,
 )
+from dascot_rs import compile_qasm
 from .guoq import run_guoq, print_help, CLIFFORDT, FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE
 from .utils import create_scratch_dir
 import os
@@ -25,7 +27,6 @@ DEFAULT_EXT = {
     FULL_FT_MODE: "json",
     SCMR_MODE: "json",
 }
-
 
 class Guoq_Help_Action(argparse.Action):
     def __init__(
@@ -84,6 +85,22 @@ def map_and_route(
         map, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
     dump(arch, map, steps, id_to_op, output_path, gates)
 
+#dascot_rs mapping and routing should be in its own function as
+#the parsing is done in the dascot_rs rust module, and putting it 
+#in map_and_route would result it parsing twice
+def map_and_route_dascot_rs(
+    input_path: str, output_path: str, arch_name: str, timeout: int,
+    init_mapping_temp: int, init_routing_temp: int, term_mapping_temp: int,
+    term_routing_temp: int, cooling_mapping_rate: int, cooling_routing_rate: int, 
+    mode = "dascot_rs"):
+    
+    if not arch_name:
+        with open(arch_name) as f:
+            arch_name = ast.literal_eval(f.read())
+    
+    #Only accepts square_sparse for now
+    compile_qasm(input_path, output_path, arch_name, init_mapping_temp, init_routing_temp, 
+                term_mapping_temp, term_routing_temp, cooling_mapping_rate, cooling_routing_rate, timeout)   
 
 def optimize(
     input_path: str,
@@ -247,6 +264,55 @@ def main():
         help="solver to use for mapping and routing (default: 'dascot')",
         default="dascot",
     )
+    scmr.add_argument(
+        "--init_mapping_temp",
+        "-imt",
+        type=float,
+        help="integer representing simulated annealing initial temperature for mapping (default: 100)",
+        default=100,
+    )
+    scmr.add_argument(
+        "--init_routing_temp",
+        "-irt",
+        type=float,
+        help="integer representing simulated annealing initial temperature for routing (default: 100)",
+        default=100,
+    )
+    scmr.add_argument(
+        "--term_mapping_temp",
+        "-tmt",
+        type=float,
+        help="integer representing simulated annealing termination temperature for mapping (default: 0.1)",
+        default=0.1,
+    )
+    scmr.add_argument(
+        "--term_routing_temp",
+        "-trt",
+        type=float,
+        help="integer representing simulated annealing termination temperature for routing (default: 0.1)",
+        default=0.1,
+    )
+    scmr.add_argument(
+        "--mapping_cooling_rate",
+        "-mcr",
+        type=float,
+        help="integer representing simulated annealing cooling rate for mapping (default: 0.5)",
+        default=0.5,
+    )
+    scmr.add_argument(
+        "--routing_cooling_rate",
+        "-rcr",
+        type=float,
+        help="integer representing simulated annealing cooling rate for routing (default: 0.5)",
+        default=0.5,
+    )
+    scmr.add_argument(
+        "--cache_executable_sets",
+        "-ces",
+        type=boolean,
+        help="Boolean representing whether exrecutbale sets will be cached during routing",
+        default=True,
+    )
     parser.add_argument(
         "--guoq_help", "-gh", help="print GUOQ options", action=Guoq_Help_Action
     )
@@ -300,14 +366,29 @@ def main():
             path_to_synthetiq=args.abs_path_to_synthetiq,
         )
     elif args.mode == SCMR_MODE:
-        map_and_route(
-            input_path=args.input_path,
-            output_path=args.output_path,
-            arch_name=args.architecture,
-            timeout=args.mr_timeout,
-            mode=args.mr_solver,
-        )
+        if args.mr_solver == "dascot_rs":
+            map_and_route_dascot_rs(
+                input_path=args.input_path,
+                output_path=args.output_path,
+                arch_name=args.architecture,
+                timeout=args.mr_timeout,
+                init_mapping_temp=args.init_mapping_temp,
+                init_routing_temp=args.init_routing_temp,
+                term_mapping_temp=args.term_mapping_temp,
+                term_routing_temp=args.term_routing_temp,
+                cooling_mapping_rate=args.mapping_cooling_rate,
+                cooling_routing_rate=args.routing_cooling_rate,
+                mode=args.mr_solver,
+            )
 
+        else:
+            map_and_route(
+                input_path=args.input_path,
+                output_path=args.output_path,
+                arch_name=args.architecture,
+                timeout=args.mr_timeout,
+                mode=args.mr_solver,
+            )
 
 if __name__ == "__main__":
     main()

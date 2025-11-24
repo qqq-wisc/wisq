@@ -1,5 +1,6 @@
 import subprocess
 from setuptools import setup
+from setuptools_rust import Binding, RustExtension
 
 # This will run before build
 missing_deps = []
@@ -25,4 +26,13 @@ if missing_deps:
     ).format(", ".join(missing_deps))
     raise RuntimeError(msg)
 
-setup()
+# Builds dascot_rs module
+setup(
+    rust_extensions=[
+        RustExtension(
+            "dascot_rs",
+            path="Cargo.toml",
+            binding=Binding.PyO3,
+        )
+    ],
+)

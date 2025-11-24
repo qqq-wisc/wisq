@@ -1,0 +1,23 @@
+[package]
+name = "wisq-python"
+version = "0.2.4"
+edition = "2024"
+
+[lib]
+name = "dascot_rs"
+crate-type = ["cdylib"]
+path = "rust/dascot-rs/src/lib.rs"
+
+[dependencies]
+num_cpus = "1.17.0"
+protos = "0.1.30"
+rand = "0.8"
+rayon = "1.11.0"
+regex = "1.11.3"
+serde = { version = "1.0.226", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+pyo3 = { version = "0.24", features = ["extension-module"] }
+
+[target.'cfg(unix)'.dependencies]
+pprof = { version = "0.15.0", features = ["_protobuf", "protobuf-codec"] }

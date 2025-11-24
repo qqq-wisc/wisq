@@ -1,19 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools-rust>=1.5.2"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[project.scripts]
-wisq = "wisq:main"
 
 [project]
 name = "wisq"
 version = "0.2.4"
+description = ""
+readme = "README.md"
+requires-python = ">=3.8"
 dependencies = [
     "bqskit",
     "numpy",
@@ -24,20 +18,19 @@ dependencies = [
     "qualtran @ git+https://github.com/quantumlib/Qualtran.git@fa5a8ec",
     "pytest"
 ]
-description = ""
-readme = "README.md"
-requires-python = ">=3.8"
 
 authors = [
-    { name = "Abtin Molavi, Amanda Xu", email = "amolavi@wisc.edu"}, # multiple authors not supported by pypi :(
+    { name = "Abtin Molavi, Amanda Xu", email = "amolavi@wisc.edu"},
     { name = "Amanda Xu", email = "axu44@wisc.edu"},
 ]
+
 keywords = [
     "quantum circuit",
     "quantum computing",
     "quantum",
     "fault tolerant quantum computing",
 ]
+
 classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
@@ -53,3 +46,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
+
+[project.scripts]
+wisq = "wisq:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
