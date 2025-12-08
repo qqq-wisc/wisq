@@ -1,12 +1,13 @@
 from qiskit.transpiler import PassManager, TranspilerError, TransformationPass
 from qiskit.dagcircuit import DAGCircuit
 from qiskit.converters import circuit_to_dag
-from qiskit import qasm2
 from qiskit import QuantumCircuit
 import mpmath
+from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary
+from qiskit.transpiler.passes import BasisTranslator
 from qualtran.rotation_synthesis import math_config as mc
 from qualtran.rotation_synthesis.protocols import clifford_t_synthesis as cts
-import sys
+from qualtran.rotation_synthesis.matrix import clifford_t_repr as ctr
 
 def sequence_to_circ(sequence : str) -> QuantumCircuit:
     circ = QuantumCircuit(1)
@@ -51,6 +52,13 @@ class QualtranRS(TransformationPass):
         self.approx_exp = mpmath.mpf(epsilon)
         self.qualtran_rs_config = mc.with_dps(200) # good for up to 10-20? increasing makes it slower
         self.max_t = 400
+        self._pi_over_two = mpmath.pi / 2
+        self.clifford_pm = PassManager(
+            BasisTranslator(
+                SessionEquivalenceLibrary,
+                ["id", "x", "y", "z", "h", "s", "sdg"],
+            )
+        )
 
     def run(self, dag: DAGCircuit) -> DAGCircuit:
         """Run the ``QualtranRS`` pass on `dag`.
@@ -65,14 +73,29 @@ class QualtranRS(TransformationPass):
             if not node.name == "rz":
                 continue  # ignore all non-rz qubit gates
 
-            angle = node.op.params[0]
+            angle = mpmath.mpf(node.op.params[0])
+            ratio = angle / self._pi_over_two
+            nearest = mpmath.nint(ratio)
+            if mpmath.almosteq(ratio, nearest, abs_eps=1e-12):
+                base = QuantumCircuit(1)
+                base.rz(float(angle), 0)
+                clifford_circ = self.clifford_pm.run(base)
+                if clifford_circ.global_phase:
+                    dag.global_phase += float(clifford_circ.global_phase)
+                dag.substitute_node_with_dag(node, circuit_to_dag(clifford_circ))
+                continue
 
-            diagonal = cts.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
+            diagonal = cts.diagonal_unitary_approx(
+                theta=angle,
+                eps=self.approx_exp,
+                max_n=self.max_t,
+                config=self.qualtran_rs_config,
+            )
 
             if diagonal is None:
                 raise TranspilerError(f"Could not decompose rotation by angle {angle} within approximation epsilon {self.approx_exp} and max T-count {self.max_t}.")
 
-            sequence = diagonal.to_matrix().to_sequence()
+            sequence = ctr.to_sequence(diagonal.to_matrix())
 
             decomposed = sequence_to_circ(sequence)
 
