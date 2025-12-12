@@ -90,29 +90,6 @@ Here we set the optimization objective to minimize total gate with the `obj` fla
 
 Additionally, we use the `-aa` flag and the file ``advanced_args.json`` to pass more advanced arguments to the optimizer. The possible entries in one of these advanced arguments files can be viewed with the command `wisq --guoq-help`.
 
-### Example 4: Saving and reusing intermediate decomposed circuits
-
-When testing and optimizing mapping and routing parameters, it's often useful to decompose the circuit once and then repeatedly test different mapping/routing configurations without redecomposing. The `--save_intermediates` flag allows you to save the decomposed circuit after the optimization pass.
-
-**First run: decompose and save**
-```
-wisq wisq-circuits/3_17_13.qasm --mode full_ft -si ./intermediates
-```
-
-**Subsequent runs: reuse the saved decomposed circuit**
-```
-wisq wisq-circuits/3_17_13.qasm --mode full_ft -arch compact_layout -si ./intermediates
-```
-
-In the second command, the tool will automatically detect the saved decomposed circuit in `./intermediates` and skip the decomposition step, only running the mapping and routing pass. This can significantly speed up testing and parameter tuning for mapping and routing, as decomposition is typically the most time-consuming step.
-
-You can also use this with the `scmr` mode:
-```
-wisq wisq-circuits/3_17_13.qasm --mode scmr -si ./intermediates
-```
-
-The `--save_intermediates` (short form `-si`) flag accepts a directory path. If the directory doesn't exist, it will be created automatically.
-
 ## Custom Architectures
 wisq allows users to specify a custom architecture for mapping and routing. The
 format for specifying an architecture is
