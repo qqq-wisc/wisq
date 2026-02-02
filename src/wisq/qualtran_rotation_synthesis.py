@@ -73,16 +73,26 @@ class QualtranRS(TransformationPass):
             if not node.name == "rz":
                 continue  # ignore all non-rz qubit gates
 
+            # Use mpmath for consistent high-precision comparison when detecting multiples of π/2.
             angle = mpmath.mpf(node.op.params[0])
-            ratio = angle / self._pi_over_two
-            nearest = mpmath.nint(ratio)
-            if mpmath.almosteq(ratio, nearest, abs_eps=1e-12):
+            remainder = mpmath.fmod(angle, self._pi_over_two)
+            is_clifford = mpmath.almosteq(remainder, 0, abs_eps=1e-12) or mpmath.almosteq(
+                mpmath.fabs(remainder) - self._pi_over_two, 0, abs_eps=1e-12
+            )
+            if is_clifford:
+                # Rz(k*π/2) for integer k: build Clifford circuit directly (BasisTranslator
+                # does not have Rz in its equivalence library for these angles).
+                equiv = mpmath.fmod(angle, 2 * mpmath.pi)
+                k = int(mpmath.nint(equiv / self._pi_over_two)) % 4
                 base = QuantumCircuit(1)
-                base.rz(float(angle), 0)
-                clifford_circ = self.clifford_pm.run(base)
-                if clifford_circ.global_phase:
-                    dag.global_phase += float(clifford_circ.global_phase)
-                dag.substitute_node_with_dag(node, circuit_to_dag(clifford_circ))
+                if k == 1:
+                    base.s(0)
+                elif k == 2:
+                    base.z(0)
+                elif k == 3:
+                    base.sdg(0)
+                # k == 0: identity, no gates
+                dag.substitute_node_with_dag(node, circuit_to_dag(base))
                 continue
 
             diagonal = cts.diagonal_unitary_approx(
