@@ -6,9 +6,29 @@ from qiskit import QuantumCircuit
 import mpmath
 from qualtran.rotation_synthesis import math_config as mc
 from qualtran.rotation_synthesis.protocols import clifford_t_synthesis as cts
+from qualtran.rotation_synthesis.matrix import clifford_t_repr as ctr
+from concurrent.futures import ProcessPoolExecutor
 import sys
 
-def sequence_to_circ(sequence : str) -> QuantumCircuit:
+
+def _decompose_rz_worker(args: tuple) -> QuantumCircuit:
+    """Worker for parallel Rz decomposition. Must be module-level for pickling."""
+    angle, eps_float, max_n, dps = args
+    config = mc.with_dps(dps)
+    approx_exp = mpmath.mpf(eps_float)
+    diagonal = cts.diagonal_unitary_approx(
+        theta=angle, eps=approx_exp, max_n=max_n, config=config
+    )
+    if diagonal is None:
+        raise ValueError(
+            f"Could not decompose rotation by angle {angle} within "
+            f"approximation epsilon {eps_float} and max T-count {max_n}."
+        )
+    sequence = ctr.to_sequence(diagonal.to_matrix())
+    return sequence_to_circ(sequence)
+
+
+def sequence_to_circ(sequence: str) -> QuantumCircuit:
     circ = QuantumCircuit(1)
     for gate in sequence:
         if gate == "S":
@@ -61,24 +81,28 @@ class QualtranRS(TransformationPass):
         Returns:
             Output dag with 1q gates synthesized in the discrete target basis.
         """
-        for node in dag.op_nodes():
-            if not node.name == "rz":
-                continue  # ignore all non-rz qubit gates
+        rz_nodes = [
+            (node, node.op.params[0])
+            for node in dag.op_nodes()
+            if node.name == "rz"
+        ]
+        if not rz_nodes:
+            return dag
 
-            angle = node.op.params[0]
+        nodes, angles = zip(*rz_nodes)
+        # Use float(approx_exp) so args are picklable for ProcessPoolExecutor
+        eps_float = float(self.approx_exp)
+        dps = 200  # must match self.qualtran_rs_config
+        args_list = [(a, eps_float, self.max_t, dps) for a in angles]
 
-            diagonal = cts.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
+        try:
+            with ProcessPoolExecutor() as executor:
+                circuits = list(executor.map(_decompose_rz_worker, args_list))
+        except ValueError as e:
+            raise TranspilerError(str(e)) from e
 
-            if diagonal is None:
-                raise TranspilerError(f"Could not decompose rotation by angle {angle} within approximation epsilon {self.approx_exp} and max T-count {self.max_t}.")
-
-            sequence = diagonal.to_matrix().to_sequence()
-
-            decomposed = sequence_to_circ(sequence)
-
-            approx_dag = circuit_to_dag(decomposed)
-
-            # convert to a dag and replace the gate by the approximation
+        for node, circ in zip(nodes, circuits):
+            approx_dag = circuit_to_dag(circ)
             dag.substitute_node_with_dag(node, approx_dag)
 
         return dag
