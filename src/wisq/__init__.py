@@ -15,6 +15,14 @@ import os
 import shutil
 import json
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.text import Text
+from rich.table import Table
+from rich import box
+
+console = Console()
 
 OPT_MODE = "opt"
 FULL_FT_MODE = "full_ft"
@@ -25,6 +33,97 @@ DEFAULT_EXT = {
     FULL_FT_MODE: "json",
     SCMR_MODE: "json",
 }
+
+_VERSION = "0.2.4"
+
+MODE_LABELS = {
+    OPT_MODE: "Circuit Optimization",
+    FULL_FT_MODE: "Full Fault-Tolerant Compilation",
+    SCMR_MODE: "Surface Code Mapping & Routing",
+}
+
+
+_LOGO = Text(
+    "        \u2580\u2580              \n"
+    "\u2588\u2588   \u2588\u2588 \u2588\u2588  \u2584\u2588\u2580\u2580\u2580 \u2584\u2588\u2588\u2588\u2588 \n"
+    "\u2588\u2588 \u2588 \u2588\u2588 \u2588\u2588  \u2580\u2588\u2588\u2588\u2584 \u2588\u2588 \u2588\u2588 \n"
+    " \u2588\u2588\u2580\u2588\u2588  \u2588\u2588\u2584 \u2584\u2584\u2584\u2588\u2580 \u2580\u2588\u2588\u2588\u2588 \n"
+    "                     \u2588\u2588 \n"
+    "                     \u2580\u2580 ",
+    style="bold #7C3AED",
+)
+
+
+def _print_banner():
+    subtitle = Text.assemble(
+        ("\n\n", ""),
+        ("Quantum Circuit Compiler", "#7C3AED"),
+        ("  \u00b7  ", "dim #7C3AED"),
+        (f"v{_VERSION}", "dim"),
+    )
+    layout = Table.grid(padding=(0, 3))
+    layout.add_row(_LOGO, subtitle)
+    console.print(Panel(layout, border_style="#7C3AED", padding=(0, 2), box=box.ROUNDED))
+    console.print()
+
+
+def _print_job_summary(mode: str, input_path: str, output_path: str):
+    console.print(
+        f"  [dim]Mode  [/dim]  [bold]{MODE_LABELS[mode]}[/bold]\n"
+        f"  [dim]Input [/dim]  {input_path}\n"
+        f"  [dim]Output[/dim]  {output_path}"
+    )
+    console.print()
+
+
+def _step(n: int, total: int, label: str, detail: str = ""):
+    detail_str = f"  [dim]{detail}[/dim]" if detail else ""
+    console.print(
+        f"[bold #7C3AED]  [{n}/{total}][/bold #7C3AED]  [bold]{label}[/bold]{detail_str}"
+    )
+
+
+def _done(label: str = ""):
+    if label:
+        console.print(f"  [bold green]\u2713[/bold green]  {label}")
+    else:
+        console.print(f"  [bold green]\u2713[/bold green]  Done")
+
+
+def _print_formatted_help(parser):
+    console.print(f"  [bold]Usage:[/bold]  wisq [dim][options][/dim] [bold]input_path[/bold]\n")
+    for group in parser._action_groups:
+        actions = [a for a in group._group_actions]
+        if not actions:
+            continue
+        console.print(Rule(f"  {group.title}  ", style="dim #7C3AED", align="left"))
+        console.print()
+        for action in actions:
+            if action.option_strings:
+                flags = ", ".join(action.option_strings)
+                if action.choices:
+                    flags += f"  [dim]{{{', '.join(str(c) for c in action.choices)}}}[/dim]"
+                elif action.type:
+                    flags += f"  [dim]{action.type.__name__.upper()}[/dim]"
+            else:
+                flags = action.dest
+            console.print(f"  [bold #7C3AED]{flags}[/bold #7C3AED]")
+            if action.help:
+                help_text = " ".join(action.help.split())
+                console.print(f"    [dim]{help_text}[/dim]")
+            console.print()
+
+
+class WisqArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        _print_banner()
+        console.print(f"  [bold red]\u2717[/bold red]  [bold]{message}[/bold]\n")
+        console.print(f"  Run [bold #7C3AED]wisq --help[/bold #7C3AED] for usage.\n")
+        self.exit(2)
+
+    def print_help(self, file=None):
+        _print_banner()
+        _print_formatted_help(self)
 
 
 class Guoq_Help_Action(argparse.Action):
@@ -144,9 +243,7 @@ def compile_fault_tolerant(
         transpiled_and_optimized_path = os.path.join(
             scratch_dir_path, "after_guoq.qasm"
         )
-        print(
-            f"Decomposing to Clifford + T (if needed) and optimizing the input circuit with a timeout of {opt_timeout} seconds..."
-        )
+        _step(1, 2, "Decompose & Optimize", f"timeout: {opt_timeout}s")
         optimize(
             input_path,
             transpiled_and_optimized_path,
@@ -157,9 +254,9 @@ def compile_fault_tolerant(
             verbose=verbose,
             path_to_synthetiq=path_to_synthetiq,
         )
-        print(
-            f"Done optimizing. Mapping and routing the optimized circuit with a timeout of {mr_timeout} seconds..."
-        )
+        _done("Optimization complete")
+        console.print()
+        _step(2, 2, "Map & Route", f"timeout: {mr_timeout}s")
         map_and_route(
             transpiled_and_optimized_path,
             arch_name,
@@ -167,13 +264,14 @@ def compile_fault_tolerant(
             mr_timeout,
             mode=mr_solver,
         )
+        _done("Mapping and routing complete")
     finally:
         if os.path.exists(scratch_dir_path):
             shutil.rmtree(scratch_dir_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = WisqArgumentParser(
         prog="wisq",
         description="A compiler for quantum circuits. Optimize your circuits and/or map them to a surface code architecture. See README for example usage and documentation.",
     )
@@ -262,6 +360,8 @@ def main():
     )
     args = parser.parse_args()
 
+    _print_banner()
+
     if not os.path.exists(args.input_path) and "wisq-circuits" in args.input_path:
         args.input_path = os.path.join(
             os.path.dirname(__file__),
@@ -275,7 +375,10 @@ def main():
         with open(args.advanced_args, "r") as f:
             args.advanced_args = json.load(f)
 
+    _print_job_summary(args.mode, args.input_path, args.output_path)
+
     if args.mode == OPT_MODE:
+        _step(1, 1, "Optimize", f"timeout: {args.opt_timeout}s")
         optimize(
             input_path=args.input_path,
             output_path=args.output_path,
@@ -287,6 +390,7 @@ def main():
             verbose=args.verbose,
             path_to_synthetiq=args.abs_path_to_synthetiq,
         )
+        _done("Optimization complete")
     elif args.mode == FULL_FT_MODE:
         compile_fault_tolerant(
             input_path=args.input_path,
@@ -300,6 +404,7 @@ def main():
             path_to_synthetiq=args.abs_path_to_synthetiq,
         )
     elif args.mode == SCMR_MODE:
+        _step(1, 1, "Map & Route", f"timeout: {args.mr_timeout}s")
         map_and_route(
             input_path=args.input_path,
             output_path=args.output_path,
@@ -307,6 +412,14 @@ def main():
             timeout=args.mr_timeout,
             mode=args.mr_solver,
         )
+        _done("Mapping and routing complete")
+
+    console.print()
+    console.print(Rule(style="dim #7C3AED"))
+    console.print(
+        f"  [bold green]\u2713[/bold green]  Output written to [bold]{args.output_path}[/bold]"
+    )
+    console.print()
 
 
 if __name__ == "__main__":

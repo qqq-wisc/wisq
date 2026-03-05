@@ -20,6 +20,7 @@ dependencies = [
     "python-sat",
     "pyzx",
     "qiskit>=1.0",
+    "rich>=13.0",
     "rustworkx",
     "qualtran @ git+https://github.com/quantumlib/Qualtran.git@fa5a8ec",
     "pytest"

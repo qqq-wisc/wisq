@@ -7,7 +7,12 @@ import requests
 import random
 import sys
 import platform
+import time
 from time import time_ns
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TimeElapsedColumn, TextColumn
+
+_console = Console()
 from qiskit import QuantumCircuit
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.exceptions import TranspilerError
@@ -94,7 +99,7 @@ def transpile_if_needed(
         )
         nam_circuit = pm.run(circuit)
         num_rz = nam_circuit.count_ops().get("rz", 0)
-        print(f"Decomposing to Clifford + T using Qualtran rotation synthesis. Estimated time: {10*num_rz} seconds.")
+        _console.print(f"    [dim]Decomposing to Clifford + T via Qualtran rotation synthesis  [bold]~{10*num_rz}s[/bold][/dim]")
         approximation_per_angle = approximation_epsilon / (num_rz * ERROR_BUDGET)
         approximation = approximation_epsilon / ERROR_BUDGET
 
@@ -172,8 +177,9 @@ def run_guoq(
                 elif system == "darwin" and processor in ["arm", "i386"]:
                     path_to_synthetiq = f"./bin/main_mac_{processor}"
                 else:
-                    print(
-                        "Unsupported platform for pre-compiled Synthetiq. Please follow the instructions here to compile Synthetiq for your platform: https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234. Then try again using the `--abs_path_to_synthetiq/-apts` option to pass in the absolute path to the Synthetiq `bin/main` binary."
+                    _console.print(
+                        "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
+                        "Please compile Synthetiq for your platform and pass the binary path via [bold]--abs_path_to_synthetiq[/bold]."
                     )
                     sys.exit(1)
             resynth_proc = start_resynth_server(
@@ -183,8 +189,9 @@ def run_guoq(
                 path_to_synthetiq=path_to_synthetiq,
             )
             # Wait for server to spin up
-            while not is_server_ready():
-                continue
+            with _console.status("    [dim]Starting resynthesis server...[/dim]"):
+                while not is_server_ready():
+                    time.sleep(0.1)
 
         # Invoke GUOQ
         command = f"java -ea -cp {GUOQ_JAR} qoptimizer.Optimizer @{args_file_path}"
@@ -192,10 +199,24 @@ def run_guoq(
         proc = subprocess.Popen(
             command_list,
         )
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.terminate()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("    [dim #7C3AED]{task.description}[/dim #7C3AED]"),
+            BarColumn(bar_width=30),
+            TimeElapsedColumn(),
+            console=_console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Optimizing  (timeout: {timeout}s)", total=timeout)
+            start = time.time()
+            while proc.poll() is None:
+                elapsed = time.time() - start
+                if elapsed >= timeout:
+                    proc.terminate()
+                    break
+                progress.update(task, completed=int(elapsed))
+                time.sleep(0.5)
+            progress.update(task, completed=timeout)
 
         # Kill resynthesis server
         if resynth_proc is not None:

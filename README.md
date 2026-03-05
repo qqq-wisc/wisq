@@ -1,4 +1,7 @@
 # wisq
+
+![wisq demo](docs/demo/demo.gif)
+
 **wisq** is a powerful and flexible compiler for quantum circuits. It is especially well-suited for targeting fault-tolerant devices using the *surface code*. The ``full_ft`` mode optimizes the input circuit, then maps the circuit qubits to the architecture and routes two-qubit gates (including distillation-based T gates). wisq also provides a dedicated circuit optimization mode ``opt`` that can optimize circuits over [arbitrary gate sets](https://github.com/qqq-wisc/guoq?tab=readme-ov-file#supported-gate-sets) by invoking GUOQ [1] with [different arguments](#example-3-advanced-optimization-configuration).
 
 
@@ -58,7 +61,11 @@ The table below summarizes the compiler modes.
 In modes that apply mapping and routing, the resulting JSON object has four keys: "map", representing the qubit map; "steps", which is a list of time steps; "arch", representing the architecture of the hardware; and "gates", which is a list of the gates from the circuit. Each step is a list of parallel gates and the paths along which they are routed. 
 
 ## Example commands
-wisq includes an array of additional configuration options which can be viewed with the `wisq --help` command. Below we provide a few examples to highlight some of these options. 
+wisq includes an array of additional configuration options which can be viewed with the `wisq --help` command:
+
+![wisq help](docs/demo/help.gif)
+
+Below we provide a few examples to highlight some of these options. 
 
 ### Example 1: Basic optimization configuration
 
