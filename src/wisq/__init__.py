@@ -9,7 +9,13 @@ from .dascot import (
     run_dascot,
     run_sat_scmr,
 )
-from .guoq import run_guoq, print_help, CLIFFORDT, FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE
+from .guoq import (
+    run_guoq,
+    print_help,
+    CLIFFORDT,
+    FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE,
+    GATE_SETS,
+)
 from .utils import create_scratch_dir
 import os
 import shutil
@@ -25,6 +31,9 @@ DEFAULT_EXT = {
     FULL_FT_MODE: "json",
     SCMR_MODE: "json",
 }
+
+# Gates supported by SCMR mapping and routing (must match what extract_gates_from_file / phased_graph expect).
+SCMR_ALLOWED_GATES = {"cx", "t", "tdg", "h", "x", "s", "sdg", "id"}
 
 
 class Guoq_Help_Action(argparse.Action):
@@ -70,7 +79,21 @@ def map_and_route(
     gates, ops = extract_gates_from_file(input_path)
     id_to_op = {i: ops[i] for i in range(len(ops))}
     total_qubits = len(extract_qubits_from_gates(gates))
-    circ = QuantumCircuit.from_qasm_file(input_path)
+
+    circuit_gates = set(circ.count_ops().keys())
+    unsupported = circuit_gates - SCMR_ALLOWED_GATES
+    if unsupported:
+        suggested = (
+            f"wisq {input_path} --mode full_ft -ot 0 -arch {arch_name} "
+            f"-tmr {timeout} -op {output_path}"
+        )
+        raise ValueError(
+            "Mapping and routing (SCMR mode) only support circuits whose gates are in "
+            f"{sorted(SCMR_ALLOWED_GATES)}. This circuit contains unsupported gates: "
+            f"{sorted(unsupported)}. Decompose the circuit first using full_ft mode with "
+            "optimization timeout 0, for example:\n  " + suggested
+        )
+
     if arch_name == "square_sparse_layout":
         arch = square_sparse_layout(total_qubits, magic_states="all_sides")
     elif arch_name == "compact_layout":
@@ -202,7 +225,7 @@ def main():
         "-tg",
         help="target gateset for circuit optimization (default: Clifford + T)",
         default=CLIFFORDT,
-        choices=guoq.GATE_SETS.keys(),
+        choices=GATE_SETS.keys(),
     )
     opt.add_argument(
         "--optimization_objective",
