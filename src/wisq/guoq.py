@@ -179,7 +179,10 @@ def run_guoq(
                 else:
                     _console.print(
                         "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
-                        "Please compile Synthetiq for your platform and pass the binary path via [bold]--abs_path_to_synthetiq[/bold]."
+                        "Please compile Synthetiq for your platform according to "
+                        "https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234 "
+                        "and pass the [bold]bin/main[/bold] binary absolute path via "
+                        "[bold]--abs_path_to_synthetiq[/bold] or [bold]-apts[/bold]."
                     )
                     sys.exit(1)
             resynth_proc = start_resynth_server(

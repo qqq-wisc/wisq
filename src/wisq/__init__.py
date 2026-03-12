@@ -243,7 +243,7 @@ def compile_fault_tolerant(
         transpiled_and_optimized_path = os.path.join(
             scratch_dir_path, "after_guoq.qasm"
         )
-        _step(1, 2, "Decompose & Optimize", f"timeout: {opt_timeout}s")
+        _step(1, 2, "Decompose to Clifford + T (if needed) & Optimize", f"timeout: {opt_timeout}s")
         optimize(
             input_path,
             transpiled_and_optimized_path,
