@@ -14,6 +14,7 @@ from .utils import create_scratch_dir
 import os
 import shutil
 import json
+from importlib.metadata import version
 
 from rich.console import Console
 from rich.panel import Panel
@@ -34,7 +35,7 @@ DEFAULT_EXT = {
     SCMR_MODE: "json",
 }
 
-_VERSION = "0.2.4"
+_VERSION = version("wisq")
 
 MODE_LABELS = {
     OPT_MODE: "Circuit Optimization",
