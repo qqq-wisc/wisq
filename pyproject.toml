@@ -13,7 +13,7 @@ wisq = "wisq:main"
 
 [project]
 name = "wisq"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
     "bqskit",
     "numpy",
@@ -22,7 +22,7 @@ dependencies = [
     "qiskit>=1.0",
     "rich>=13.0",
     "rustworkx",
-    "qualtran @ git+https://github.com/quantumlib/Qualtran.git@fa5a8ec",
+    "qualtran==0.7.0",
     "pytest"
 ]
 description = ""
