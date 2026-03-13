@@ -4,6 +4,9 @@ from .phased_graph import build_phased_map
 from .sarouting import sim_anneal_route
 from .sat_scmr import solve
 import signal
+from rich.console import Console
+
+_console = Console()
 
 
 class TimeoutException(Exception):
@@ -93,7 +96,7 @@ def run_dascot(circ, gates, arch, output_path, timeout):
             *[10, 0.1, 0.1],
         )
     except TimeoutException:
-        print("Routing timed out. Writing partial output...")
+        _console.print("    [bold yellow]⚠[/bold yellow]  Routing timed out — writing partial output")
         with open(output_path, "w") as f:
             json.dump({"map": phased_map, "steps": "timeout"}, f)
         return
@@ -120,7 +123,7 @@ def run_sat_scmr(circ, gates, arch, output_path, timeout):
             start_from=depth
         )
     except TimeoutException:
-        print("Mapping and routing timed out. Writing partial output...")
+        _console.print("    [bold yellow]⚠[/bold yellow]  Mapping and routing timed out — writing partial output")
         with open(output_path, "w") as f:
             json.dump({"steps": "timeout"}, f)
         return
