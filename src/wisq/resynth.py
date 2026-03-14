@@ -321,14 +321,9 @@ def synthetiq_disk(
 
 class MyHandler(BaseHTTPRequestHandler):
     def __init__(
-        self, bqskit, bqskit_auto_workers, verbose, path_to_synthetiq, *args, **kwargs
+        self, bqskit_compiler, verbose, path_to_synthetiq, *args, **kwargs
     ):
-        self.compiler = None
-        if bqskit:
-            if bqskit_auto_workers:
-                self.compiler = Compiler()
-            else:
-                self.compiler = Compiler(num_workers=64)
+        self.bqskit_compiler = bqskit_compiler
         self.verbose = verbose
         self.path_to_synthetiq = path_to_synthetiq
         super().__init__(*args, **kwargs)
@@ -342,7 +337,7 @@ class MyHandler(BaseHTTPRequestHandler):
             time1 = time.time()
             data = {}
             output = bqskit_io(
-                self.compiler,
+                self.bqskit_compiler,
                 data,
                 parsed_body["circuit"],
                 int(parsed_body["opt_level"]),
@@ -387,8 +382,14 @@ def start_server(bqskit, bqskit_auto_workers, verbose=False, path_to_synthetiq=N
     if not verbose:
         sys.stdout = open(os.devnull, "w")
         sys.stderr = open(os.devnull, "w")
+    bqskit_compiler = None
+    if bqskit:
+        if bqskit_auto_workers:
+            bqskit_compiler = Compiler()
+        else:
+            bqskit_compiler = Compiler(num_workers=64)
     partial_handler = partial(
-        MyHandler, bqskit, bqskit_auto_workers, verbose, path_to_synthetiq
+        MyHandler, bqskit_compiler, verbose, path_to_synthetiq
     )
     try:
         socketserver.TCPServer.allow_reuse_address = True
