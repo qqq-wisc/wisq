@@ -94,6 +94,14 @@ def transpile_if_needed(
 
     transpiled = None
     if target_gateset == CLIFFORDT:
+        if approximation_epsilon == 0:
+            _console.print(
+                            "[bold red]Error:[/bold red] Decomposing to Clifford + T requires non-zero approximation epsilon. "
+                            "Please pass a value strictly between 0 and 1 to "
+                            "[bold]--approx_epsilon[/bold] or [bold]-ap[/bold]."
+                        )
+            sys.exit(1)
+
         pm = PassManager(
             [BasisTranslator(equivalence_library=sel, target_basis=GATE_SETS["NAM"])]
         )
