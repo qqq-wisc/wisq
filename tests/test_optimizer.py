@@ -10,12 +10,15 @@ from wisq.guoq import GATE_SETS
 import csv
 
 
-def load_csv_args(path="args_limited.csv"):
+def load_csv_args(path):
   rows = []
   with open(path, newline="") as f:
     reader = csv.DictReader(f)
+    counter = 0
     for row in reader:
+      row["test_id"] = counter
       rows.append(row)
+      counter+=1
   return rows
 
 
@@ -39,19 +42,21 @@ def optimizer_cli_equivalence_test(
   gateset_name = args_dict["target_gateset"].upper() if args_dict["target_gateset"] else random.choice(list(GATE_SETS.keys()))
   gateset = GATE_SETS[gateset_name]
 
-  input_path = Path("input.qasm")
-  output_path = Path("out.qasm")
+  input_name = f"input{args_dict["test_id"]}"
+  input_path = Path(f"{input_name}.qasm")
+  output_path = Path(f"output{args_dict["test_id"]}.qasm")
 
   try:
-    build_random_qasm(num_qubits=num_qubits, depth=depth, seed=seed, basis_gates=gateset, dir_name=".", file_name="input")
+    build_random_qasm(num_qubits=num_qubits, depth=depth, seed=seed, basis_gates=gateset, dir_name=".", file_name=input_name)
 
     # sanity check
     assert input_path.exists(), "failed to generate QASM file"
 
     # build args list
-    args = ["wisq", "--mode", "opt", input_path.as_posix()]  # hardcoded params needed for testing
+    args = ["wisq", "--mode", "opt", "--output_path", output_path.as_posix(), input_path.as_posix()]  # hardcoded params needed for testing
     for arg, value in args_dict.items():
-      if arg == "mode":  # check for overwritten args
+      print(value)
+      if arg == "test_id":  # test_id is not input to optimizer
         continue
       elif value is None or value.lower() == "false" or value == "":  # check for blank args
         continue
@@ -78,6 +83,7 @@ def optimizer_cli_equivalence_test(
         f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
       )
 
+    time.sleep(3)
     assert output_path.exists(), "optimizer did not produce output file"
 
     circ_in = load_qasm_2(input_path.as_posix(), custom_instructions=LEGACY_CUSTOM_INSTRUCTIONS)
@@ -102,7 +108,7 @@ def optimizer_cli_equivalence_test(
 
 @pytest.mark.parametrize(
   "csv_row",
-  load_csv_args()  
+  load_csv_args("opt_test_args.csv")  
 )
 def test_optimizer_cli_equivalence_csv(csv_row):
   """
