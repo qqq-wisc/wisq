@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  test:
+  test-optimizer:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,10 +37,56 @@ jobs:
           cd tests
           pytest -n auto -v test_wisq_cli.py::test_optimizer_cli_equivalence_csv
 
+  test-mr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+            distribution: 'temurin'
+            java-version: '21'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ".[test]"
+
       - name: Run mapper and router tests
         run: |
           cd tests
           pytest -n auto -v test_wisq_cli.py::test_mr_cli_csv
+
+  test-fullft:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+            distribution: 'temurin'
+            java-version: '21'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ".[test]"
 
       - name: Run full ft tests
         run: |
