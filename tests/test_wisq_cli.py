@@ -93,7 +93,7 @@ def optimizer_cli_equivalence_test(
       )
 
     time.sleep(3)
-    assert output_path.exists(), "did not produce output file"
+    assert output_path.exists(), "did not produce output file\n" + f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
     circ_in = load_qasm_2(input_path.as_posix(), custom_instructions=LEGACY_CUSTOM_INSTRUCTIONS)
     circ_out = load_qasm_2(output_path.as_posix(), custom_instructions=LEGACY_CUSTOM_INSTRUCTIONS)
@@ -153,7 +153,7 @@ def mr_cli_test(
       )
 
     time.sleep(3)
-    assert output_path.exists(), "did not produce output file"
+    assert output_path.exists(), "did not produce output file\n" + f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
   finally:
     for path in [input_path, output_path]:
@@ -213,7 +213,7 @@ def full_ft_cli_test(
       )
 
     time.sleep(3)
-    assert output_path.exists(), "did not produce output file"
+    assert output_path.exists(), "did not produce output file\n" + f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
   finally:
     for path in [input_path, output_path]:
