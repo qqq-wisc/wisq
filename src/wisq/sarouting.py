@@ -1,6 +1,7 @@
 import itertools
 import math
 import random
+import time
 import numpy as np
 from .architecture import vertical_neighbors, horizontal_neighbors
 import rustworkx as rx
@@ -381,6 +382,7 @@ def sim_anneal_route(
     initial_order="random",
     reward_name="criticality",
     take_first_ms=True,
+    timeout=None,
 ):
     timesteps = []
     grid_len = arch["width"]
@@ -392,7 +394,10 @@ def sim_anneal_route(
     if temperature > termination_temp:
         crit_dict = build_crit_dict_fast(gates)
     tried_steps = 0
+    current = time.time()
     while len(gates_id_table) != 0:
+        if timeout != None and time.time() - current > timeout:
+            break
         executable, remaining = executable_subset(gates_id_table)
         step, tried = best_realizable_set_found(
             gates_id_table,

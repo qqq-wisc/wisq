@@ -14,9 +14,11 @@ class TimeoutException(Exception):
 
     pass
 
+
 def timeout_handler(signum, frame):
     """Signal handler for routing timeout."""
     raise TimeoutException("Routing timed out")
+
 
 def extract_gates_from_file(fname):
     gates = []
@@ -81,12 +83,7 @@ def run_dascot(circ, gates, arch, output_path, timeout):
         timeout=timeout // 2,
         *scaled_sim_anneal_params,
     )
-
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout // 2)
-
-    try:
-        steps, _ = sim_anneal_route(
+    steps, _ = sim_anneal_route(
             gates,
             arch,
             phased_map,
@@ -94,20 +91,17 @@ def run_dascot(circ, gates, arch, output_path, timeout):
             order_fraction=1,
             take_first_ms=False,
             *[10, 0.1, 0.1],
+            timeout=timeout // 2,
         )
-    except TimeoutException:
-        _console.print("    [bold yellow]⚠[/bold yellow]  Routing timed out — writing partial output")
-        with open(output_path, "w") as f:
-            json.dump({"map": phased_map, "steps": "timeout"}, f)
-        return
-    finally:
-        signal.alarm(0)
+    _console.print(
+            "    [bold yellow]⚠[/bold yellow]  Routing timed out — writing partial output"
+        )
     return phased_map, steps
 
 
 def run_sat_scmr(circ, gates, arch, output_path, timeout):
     signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout // 2)
+    signal.alarm(timeout)
     depth = circ.depth(filter_function=lambda x: x[0].name in ["cx", "t", "tdg"])
     width = arch["width"]
     height = arch["height"]
@@ -120,10 +114,12 @@ def run_sat_scmr(circ, gates, arch, output_path, timeout):
             grid_len=width,
             grid_height=height,
             alg_qubits=alg_qubits,
-            start_from=depth
+            start_from=depth,
         )
     except TimeoutException:
-        _console.print("    [bold yellow]⚠[/bold yellow]  Mapping and routing timed out — writing partial output")
+        _console.print(
+            "    [bold yellow]⚠[/bold yellow]  Mapping and routing timed out — writing partial output"
+        )
         with open(output_path, "w") as f:
             json.dump({"steps": "timeout"}, f)
         return
