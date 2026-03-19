@@ -7,11 +7,8 @@ from qiskit.circuit.random import random_circuit
 from qiskit.qasm2 import dump as dump_qasm_2
 from qiskit import transpile
 from qiskit.transpiler import PassManager
-from qiskit.transpiler.passes import BasisTranslator
-from qiskit.circuit.equivalence_library import StandardEquivalenceLibrary as sel
 from wisq.qualtran_rotation_synthesis import QualtranRS
 from pathlib import Path
-from bqskit.qis import UnitaryMatrix
 
 def assert_no_measurements(circuit: QuantumCircuit) -> QuantumCircuit:
         """
@@ -112,17 +109,6 @@ def is_circuit_equiv_random_sv(qasm1: QuantumCircuit, qasm2: QuantumCircuit, tol
             return False
     
     return True
-
-
-def hs_distance(qasm1: QuantumCircuit, qasm2: QuantumCircuit, epsilon) -> float:
-    unitary1 = UnitaryMatrix(Operator(qasm1).data)
-    unitary2 = UnitaryMatrix(Operator(qasm2).data)
-
-    return unitary1.isclose(unitary2, epsilon)
-
-
-def is_circuit_approx_equiv(qasm1: QuantumCircuit, qasm2: QuantumCircuit, epsilon: float = 1e-8, check_distance=hs_distance) -> bool:
-    return check_distance(qasm1, qasm2, epsilon)
 
 
 def build_random_qasm(
