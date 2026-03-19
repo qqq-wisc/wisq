@@ -93,7 +93,7 @@ def transpile_if_needed(
         return (approximation, input_path)
 
     transpiled = None
-    if target_gateset == CLIFFORDT:
+    if target_gateset == CLIFFORDT: # TODO: update when https://github.com/qqq-wisc/wisq/pull/34 merged
         if approximation_epsilon == 0:
             _console.print(
                             "[bold red]Error:[/bold red] Decomposing to Clifford + T requires non-zero approximation epsilon. "
