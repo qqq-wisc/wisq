@@ -4,6 +4,7 @@ import os
 import shutil
 import json
 from importlib.metadata import version
+from .guoq import CLIFFORDT, FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE, GATE_SETS
 
 from rich.console import Console
 from rich.panel import Panel
@@ -17,10 +18,6 @@ console = Console()
 OPT_MODE = "opt"
 FULL_FT_MODE = "full_ft"
 SCMR_MODE = "scmr"
-
-CLIFFORDT = "CLIFFORDT"
-FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE = "FT"
-_GATE_SET_NAMES = ["NAM", "CLIFFORDT", "IBMO", "IBMN", "ION"]
 
 DEFAULT_EXT = {
     OPT_MODE: "qasm",
@@ -309,7 +306,7 @@ def main():
         "-tg",
         help="target gateset for circuit optimization (default: Clifford + T)",
         default=CLIFFORDT,
-        choices=_GATE_SET_NAMES,
+        choices=GATE_SETS.keys(),
     )
     opt.add_argument(
         "--optimization_objective",
