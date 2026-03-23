@@ -386,12 +386,8 @@ def sim_anneal_route(
     initial_order="random",
     reward_name="criticality",
     take_first_ms=True,
-    timeout=None,
 ):
     timesteps = []
-    grid_len = arch["width"]
-    grid_height = arch["height"]
-    msf_faces = arch["magic_states"]
     mapping = {q: p for (q, p) in mapping}
     gates_id_table = {i: gate for i, gate in enumerate(gates)}
     crit_dict = {}
