@@ -1,5 +1,7 @@
 import json
 import re
+import time
+from .sarouting import TimeoutException
 from .phased_graph import build_phased_map
 from .sarouting import sim_anneal_route
 from .sat_scmr import solve
@@ -8,15 +10,6 @@ from rich.console import Console
 
 _console = Console()
 
-
-class TimeoutException(Exception):
-    """Custom exception to handle routing timeout."""
-
-    pass
-
-def timeout_handler(signum, frame):
-    """Signal handler for routing timeout."""
-    raise TimeoutException("Routing timed out")
 
 def extract_gates_from_file(fname):
     gates = []
@@ -42,12 +35,13 @@ def extract_qubits_from_gates(gate_list):
     return qubits
 
 
-def dump(arch, map, steps, id_to_op, output_path, gates):
+def dump(arch, map, steps, id_to_op, output_path, gates, interrupted=False):
     output = {}
     output["map"] = {k: v for k, v in map}
     output["steps"] = [label_step(id_to_op, step) for step in steps]
     output["arch"] = arch
     output["gates"] = gates
+    output["fully_routed?"] = not interrupted
     with open(output_path, "w") as f:
         json.dump(output, f, indent=4)
 
@@ -66,6 +60,7 @@ def labeled_gate_path(id_to_op, id, args, path):
 
 
 def run_dascot(circ, gates, arch, output_path, timeout):
+    start = time.time()
     sim_anneal_params = [100, 0.1, 0.1]
     depth = circ.depth(filter_function=lambda x: x[0].name in ["cx", "t", "tdg"])
     scaled_sim_anneal_params = [
@@ -81,33 +76,30 @@ def run_dascot(circ, gates, arch, output_path, timeout):
         timeout=timeout // 2,
         *scaled_sim_anneal_params,
     )
-
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout // 2)
-
-    try:
-        steps, _ = sim_anneal_route(
-            gates,
-            arch,
-            phased_map,
-            reward_name="criticality",
-            order_fraction=1,
-            take_first_ms=False,
-            *[10, 0.1, 0.1],
+    map_end = time.time()
+    elapsed = map_end - start
+    # alarm required an integer >= 1
+    remaining_timeout = int(max(1, timeout - elapsed))
+    steps, _, interrupted = sim_anneal_route(
+        gates,
+        arch,
+        phased_map,
+        reward_name="criticality",
+        order_fraction=1,
+        take_first_ms=False,
+        timeout=remaining_timeout,
+        *[10, 0.1, 0.1],
+    )
+    if interrupted:
+        _console.print(
+            "    [bold yellow]⚠[/bold yellow]  Routing timed out — writing partial output"
         )
-    except TimeoutException:
-        _console.print("    [bold yellow]⚠[/bold yellow]  Routing timed out — writing partial output")
-        with open(output_path, "w") as f:
-            json.dump({"map": phased_map, "steps": "timeout"}, f)
-        return
-    finally:
-        signal.alarm(0)
-    return phased_map, steps
+    return phased_map, steps, interrupted
 
 
 def run_sat_scmr(circ, gates, arch, output_path, timeout):
     signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout // 2)
+    signal.alarm(timeout)
     depth = circ.depth(filter_function=lambda x: x[0].name in ["cx", "t", "tdg"])
     width = arch["width"]
     height = arch["height"]
@@ -120,13 +112,13 @@ def run_sat_scmr(circ, gates, arch, output_path, timeout):
             grid_len=width,
             grid_height=height,
             alg_qubits=alg_qubits,
-            start_from=depth
+            start_from=depth,
         )
     except TimeoutException:
-        _console.print("    [bold yellow]⚠[/bold yellow]  Mapping and routing timed out — writing partial output")
-        with open(output_path, "w") as f:
-            json.dump({"steps": "timeout"}, f)
-        return
+        _console.print(
+            "    [bold yellow]⚠[/bold yellow]  Mapping and routing timed out - exiting with empty solution. Consider increasing the timeout or using the DASCOT solver.",
+        )
+        return {}, []
     finally:
         signal.alarm(0)
     return map, steps

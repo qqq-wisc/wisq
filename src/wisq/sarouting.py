@@ -1,9 +1,21 @@
 import itertools
 import math
 import random
+import signal
 import numpy as np
 from .architecture import vertical_neighbors, horizontal_neighbors
 import rustworkx as rx
+
+
+class TimeoutException(Exception):
+    """Custom exception to handle routing timeout."""
+
+    pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for routing timeout."""
+    raise TimeoutException("Routing timed out")
 
 
 def route_gate(
@@ -65,11 +77,11 @@ def route_gate(
             if take_first_ms and len(gate) == 1:
                 break
     if shortest_pair != None:
-        s,t = shortest_pair 
+        s, t = shortest_pair
         if s == t:
             path = [s]
         else:
-            path = list(rx.dijkstra_shortest_paths(device_graph, source=s, target = t)[t])
+            path = list(rx.dijkstra_shortest_paths(device_graph, source=s, target=t)[t])
         if s not in path:
             path = [s] + path
         if t not in path:
@@ -378,45 +390,51 @@ def sim_anneal_route(
     cooling_rate,
     termination_temp,
     order_fraction,
+    timeout,
     initial_order="random",
     reward_name="criticality",
     take_first_ms=True,
 ):
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)
     timesteps = []
-    grid_len = arch["width"]
-    grid_height = arch["height"]
-    msf_faces = arch["magic_states"]
     mapping = {q: p for (q, p) in mapping}
     gates_id_table = {i: gate for i, gate in enumerate(gates)}
     crit_dict = {}
     if temperature > termination_temp:
         crit_dict = build_crit_dict_fast(gates)
     tried_steps = 0
-    while len(gates_id_table) != 0:
-        executable, remaining = executable_subset(gates_id_table)
-        step, tried = best_realizable_set_found(
-            gates_id_table,
-            executable,
-            arch,
-            mapping,
-            order_fraction=order_fraction,
-            crit_dict=crit_dict,
-            temperature=temperature,
-            cooling_rate=cooling_rate,
-            termination_temp=termination_temp,
-            initial_order=initial_order,
-            reward_name=reward_name,
-            take_first_ms=take_first_ms,
-        )
-        tried_steps += tried
-        timesteps.append(step)
-        routed_ids = [x[0] for x in step]
-        not_executed = {
-            id: gates_id_table[id] for id in executable if id not in routed_ids
-        }
-        gates_id_table = {**not_executed, **remaining}
+    interrupted = False
+    try:
+        while len(gates_id_table) != 0:
+            executable, remaining = executable_subset(gates_id_table)
+            step, tried = best_realizable_set_found(
+                gates_id_table,
+                executable,
+                arch,
+                mapping,
+                order_fraction=order_fraction,
+                crit_dict=crit_dict,
+                temperature=temperature,
+                cooling_rate=cooling_rate,
+                termination_temp=termination_temp,
+                initial_order=initial_order,
+                reward_name=reward_name,
+                take_first_ms=take_first_ms,
+            )
+            tried_steps += tried
+            timesteps.append(step)
+            routed_ids = [x[0] for x in step]
+            not_executed = {
+                id: gates_id_table[id] for id in executable if id not in routed_ids
+            }
+            gates_id_table = {**not_executed, **remaining}
+    except TimeoutException:
+        interrupted = True
+    finally:
+        signal.alarm(0)
     # print(f'routing orders tried {tried_steps}')
-    return timesteps, tried_steps
+    return timesteps, tried_steps, interrupted
 
 
 def get_depth_by_qubit(gates):
