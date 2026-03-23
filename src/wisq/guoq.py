@@ -20,8 +20,6 @@ from qiskit.transpiler.passes import BasisTranslator
 from qiskit.circuit.equivalence_library import StandardEquivalenceLibrary as sel
 from qiskit import qasm2
 from .utils import create_scratch_dir
-from .resynth import start_server
-from .qualtran_rotation_synthesis import QualtranRS
 
 GUOQ_JAR = os.path.join(
     os.path.dirname(__file__), "lib", "GUOQ-1.0-jar-with-dependencies.jar"
@@ -43,6 +41,8 @@ ERROR_BUDGET = 2
 
 
 def start_resynth_server(bqskit=False, verbose=False, path_to_synthetiq=None):
+    from .resynth import start_server
+
     p = multiprocessing.Process(
         target=start_server, args=(bqskit, True, verbose, path_to_synthetiq)
     )
@@ -93,7 +93,15 @@ def transpile_if_needed(
         return (approximation, input_path)
 
     transpiled = None
-    if target_gateset == CLIFFORDT:
+    if target_gateset == CLIFFORDT: # TODO: update when https://github.com/qqq-wisc/wisq/pull/34 merged
+        if approximation_epsilon == 0:
+            _console.print(
+                            "[bold red]Error:[/bold red] Decomposing to Clifford + T requires non-zero approximation epsilon. "
+                            "Please pass a value strictly between 0 and 1 to "
+                            "[bold]--approx_epsilon[/bold] or [bold]-ap[/bold]."
+                        )
+            sys.exit(1)
+
         pm = PassManager(
             [BasisTranslator(equivalence_library=sel, target_basis=GATE_SETS["NAM"])]
         )
@@ -102,6 +110,8 @@ def transpile_if_needed(
         _console.print(f"    [dim]Decomposing to Clifford + T via Qualtran rotation synthesis  [bold]~{10*num_rz}s[/bold][/dim]")
         approximation_per_angle = approximation_epsilon / (num_rz * ERROR_BUDGET)
         approximation = approximation_epsilon / ERROR_BUDGET
+
+        from .qualtran_rotation_synthesis import QualtranRS
 
         pm = PassManager([QualtranRS(approximation_per_angle)])
 

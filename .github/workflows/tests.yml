@@ -11,28 +11,32 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        include:
+          - name: optimizer
+            test: test_wisq_cli.py::test_optimizer_cli_equivalence_csv
+          - name: maproute
+            test: test_wisq_cli.py::test_mr_cli_csv
+          - name: fullft
+            test: test_wisq_cli.py::test_full_ft_cli_csv
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install Java
         uses: actions/setup-java@v4
         with:
-            distribution: 'temurin'
-            java-version: '21'
-
+          distribution: 'temurin'
+          java-version: '21'
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install ".[test]"
-
-      - name: Run pytest
+      - name: Run tests (${{ matrix.name }})
         run: |
           cd tests
-          pytest -n auto -v test_optimizer.py
+          pytest -n auto -v ${{ matrix.test }}

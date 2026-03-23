@@ -6,6 +6,8 @@ import time
 from qiskit.circuit.random import random_circuit
 from qiskit.qasm2 import dump as dump_qasm_2
 from qiskit import transpile
+from qiskit.transpiler import PassManager
+from wisq.qualtran_rotation_synthesis import QualtranRS
 from pathlib import Path
 
 def assert_no_measurements(circuit: QuantumCircuit) -> QuantumCircuit:
@@ -150,6 +152,29 @@ def build_random_qasm(
         seed=seed
     )
     circ = transpile(circ, basis_gates=basis_gates, optimization_level=0)
+    os.makedirs(dir_name, exist_ok=True)
+    if file_name == None:
+        file_name = f"random_{num_qubits}q_{depth}d-{int(time.time())}"
+    output_path = Path(dir_name) / f"{file_name}.qasm"
+    dump_qasm_2(circ, output_path)
+
+
+def build_random_cliffordt_qasm(
+        num_qubits: int,
+        depth: int,
+        seed: int | None = None,
+        epsilon: float = 1e-3,
+        dir_name: str = "randomly-generated-circuits",
+        file_name: str | None = None
+    ) -> None:
+    circ = random_circuit(
+        num_qubits=num_qubits,
+        depth=depth,
+        seed=seed
+    )
+    nam_circuit = transpile(circ, basis_gates=["rz", "h", "x", "cx"], optimization_level=0)
+    pm = PassManager([QualtranRS(epsilon)])
+    circ = pm.run(nam_circuit)
     os.makedirs(dir_name, exist_ok=True)
     if file_name == None:
         file_name = f"random_{num_qubits}q_{depth}d-{int(time.time())}"

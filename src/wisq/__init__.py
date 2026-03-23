@@ -1,20 +1,10 @@
 import argparse
 import ast
-from qiskit import QuantumCircuit
-from .architecture import square_sparse_layout, compact_layout
-from .dascot import (
-    extract_gates_from_file,
-    extract_qubits_from_gates,
-    dump,
-    run_dascot,
-    run_sat_scmr,
-)
-from .guoq import run_guoq, print_help, CLIFFORDT, FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE
-from .utils import create_scratch_dir
 import os
 import shutil
 import json
 from importlib.metadata import version
+from .guoq import CLIFFORDT, FAULT_TOLERANT_OPTIMIZATION_OBJECTIVE, GATE_SETS
 
 from rich.console import Console
 from rich.panel import Panel
@@ -144,6 +134,7 @@ class Guoq_Help_Action(argparse.Action):
         )
 
     def __call__(self, parser, namespace, values, option_string=None):
+        from .guoq import print_help
         print_help()
         parser.exit()
 
@@ -166,6 +157,16 @@ def map_and_route(
     Writes a JSON representing
     the scheduled circuit after mapping and routing to output_path.
     """
+    from qiskit import QuantumCircuit
+    from .architecture import square_sparse_layout, compact_layout
+    from .dascot import (
+        extract_gates_from_file,
+        extract_qubits_from_gates,
+        dump,
+        run_dascot,
+        run_sat_scmr,
+    )
+
     circ = QuantumCircuit.from_qasm_file(input_path)
     gates, ops = extract_gates_from_file(input_path)
     id_to_op = {i: ops[i] for i in range(len(ops))}
@@ -209,6 +210,8 @@ def optimize(
         For example, if we want to override the default for `--rules` and use the `--remove-size-preserving-rules` flag, the dictionary would be `{"--rules": "file.txt", "--remove-size-preserving-rules": None}`.
         verbose: Whether to print verbose output.
     """
+    from .guoq import run_guoq
+
     run_guoq(
         input_path,
         output_path,
@@ -238,6 +241,8 @@ def compile_fault_tolerant(
     The input is a QASM circuit and architecture and the output is a JSON representing
     the scheduled circuit after optimizing, mapping, and routing.
     """
+    from .utils import create_scratch_dir
+
     scratch_dir_path, _ = create_scratch_dir(output_path)
 
     try:
@@ -301,7 +306,7 @@ def main():
         "-tg",
         help="target gateset for circuit optimization (default: Clifford + T)",
         default=CLIFFORDT,
-        choices=guoq.GATE_SETS.keys(),
+        choices=GATE_SETS.keys(),
     )
     opt.add_argument(
         "--optimization_objective",
