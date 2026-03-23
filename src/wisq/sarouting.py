@@ -2,14 +2,21 @@ import itertools
 import math
 import random
 import signal
-import time
 import numpy as np
 from .architecture import vertical_neighbors, horizontal_neighbors
 import rustworkx as rx
 
+
 class TimeoutException(Exception):
     """Custom exception to handle routing timeout."""
+
     pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for routing timeout."""
+    raise TimeoutException("Routing timed out")
+
 
 def route_gate(
     indexed_gate, grid_len, grid_height, msf_faces, mapping, to_remove, take_first_ms
@@ -70,11 +77,11 @@ def route_gate(
             if take_first_ms and len(gate) == 1:
                 break
     if shortest_pair != None:
-        s,t = shortest_pair 
+        s, t = shortest_pair
         if s == t:
             path = [s]
         else:
-            path = list(rx.dijkstra_shortest_paths(device_graph, source=s, target = t)[t])
+            path = list(rx.dijkstra_shortest_paths(device_graph, source=s, target=t)[t])
         if s not in path:
             path = [s] + path
         if t not in path:
@@ -383,10 +390,13 @@ def sim_anneal_route(
     cooling_rate,
     termination_temp,
     order_fraction,
+    timeout,
     initial_order="random",
     reward_name="criticality",
     take_first_ms=True,
 ):
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)
     timesteps = []
     mapping = {q: p for (q, p) in mapping}
     gates_id_table = {i: gate for i, gate in enumerate(gates)}

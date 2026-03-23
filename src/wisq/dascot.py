@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from .sarouting import TimeoutException
 from .phased_graph import build_phased_map
 from .sarouting import sim_anneal_route
@@ -8,11 +9,6 @@ import signal
 from rich.console import Console
 
 _console = Console()
-
-
-def timeout_handler(signum, frame):
-    """Signal handler for routing timeout."""
-    raise TimeoutException("Routing timed out")
 
 
 def extract_gates_from_file(fname):
@@ -64,8 +60,7 @@ def labeled_gate_path(id_to_op, id, args, path):
 
 
 def run_dascot(circ, gates, arch, output_path, timeout):
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout)
+    start = time.time()
     sim_anneal_params = [100, 0.1, 0.1]
     depth = circ.depth(filter_function=lambda x: x[0].name in ["cx", "t", "tdg"])
     scaled_sim_anneal_params = [
@@ -81,6 +76,10 @@ def run_dascot(circ, gates, arch, output_path, timeout):
         timeout=timeout // 2,
         *scaled_sim_anneal_params,
     )
+    map_end = time.time()
+    elapsed = map_end - start
+    # alarm required an integer >= 1
+    remaining_timeout = max(1, timeout - elapsed)
     steps, _, interrupted = sim_anneal_route(
         gates,
         arch,
@@ -88,6 +87,7 @@ def run_dascot(circ, gates, arch, output_path, timeout):
         reward_name="criticality",
         order_fraction=1,
         take_first_ms=False,
+        timeout=remaining_timeout,
         *[10, 0.1, 0.1],
     )
     if interrupted:
