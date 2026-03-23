@@ -179,10 +179,10 @@ def map_and_route(
         with open(arch_name) as f:
             arch = ast.literal_eval(f.read())
     if mode == "dascot":
-        map, steps = run_dascot(circ, gates, arch, output_path, timeout)
+        map, steps, interrupted = run_dascot(circ, gates, arch, output_path, timeout)
     elif mode == "sat":
         map, steps = run_sat_scmr(circ, gates, arch, output_path, timeout)
-    dump(arch, map, steps, id_to_op, output_path, gates)
+    dump(arch, map, steps, id_to_op, output_path, gates, interrupted=interrupted if mode == "dascot" else False)
 
 
 def optimize(
