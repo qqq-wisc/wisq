@@ -79,7 +79,7 @@ def run_dascot(circ, gates, arch, output_path, timeout):
     map_end = time.time()
     elapsed = map_end - start
     # alarm required an integer >= 1
-    remaining_timeout = max(1, timeout - elapsed)
+    remaining_timeout = int(max(1, timeout - elapsed))
     steps, _, interrupted = sim_anneal_route(
         gates,
         arch,
