@@ -196,6 +196,7 @@ def optimize(
     advanced_args: dict = None,
     verbose: bool = False,
     path_to_synthetiq: str = None,
+    threads: int = 1,
 ) -> None:
     """
     Use the default GUOQ parameters to optimize a circuit. Recommended for most users. Advanced users can use `advanced_args` to override default values.
@@ -209,6 +210,7 @@ def optimize(
         advanced_args: Dictionary containing advanced arguments to pass to GUOQ, overriding default values except `-out` and `-job`. `guoq.print_help` displays available options.
         For example, if we want to override the default for `--rules` and use the `--remove-size-preserving-rules` flag, the dictionary would be `{"--rules": "file.txt", "--remove-size-preserving-rules": None}`.
         verbose: Whether to print verbose output.
+        threads: Number of chunks to split and optimize in parallel.
     """
     from .guoq import run_guoq
 
@@ -222,6 +224,7 @@ def optimize(
         args=advanced_args,
         verbose=verbose,
         path_to_synthetiq=path_to_synthetiq,
+        threads=threads,
     )
 
 
@@ -235,6 +238,7 @@ def compile_fault_tolerant(
     mr_timeout=1800,
     mr_solver="dascot",
     path_to_synthetiq=None,
+    threads=1,
 ):
     """
     Compiles a circuit to a fault-tolerant architecture using the Clifford + T gate set.
@@ -259,6 +263,7 @@ def compile_fault_tolerant(
             approximation_epsilon,
             verbose=verbose,
             path_to_synthetiq=path_to_synthetiq,
+            threads=threads,
         )
         _done("Optimization complete")
         console.print()
@@ -329,6 +334,13 @@ def main():
         type=float,
         default=0,
     )
+    opt.add_argument(
+        "--opt_threads",
+        "-othreads",
+        help="number of chunks to split and optimize in parallel. must be >= 1 (default: 1)",
+        type=int,
+        default=1,
+    )
     parser.add_argument(
         "--verbose", "-v", help="print verbose output", action="store_true"
     )
@@ -395,6 +407,7 @@ def main():
             advanced_args=args.advanced_args,
             verbose=args.verbose,
             path_to_synthetiq=args.abs_path_to_synthetiq,
+            threads=args.opt_threads,
         )
         _done("Optimization complete")
     elif args.mode == FULL_FT_MODE:
@@ -408,6 +421,7 @@ def main():
             mr_timeout=args.mr_timeout,
             mr_solver=args.mr_solver,
             path_to_synthetiq=args.abs_path_to_synthetiq,
+            threads=args.opt_threads,
         )
     elif args.mode == SCMR_MODE:
         _step(1, 1, "Map & Route", f"timeout: {args.mr_timeout}s")

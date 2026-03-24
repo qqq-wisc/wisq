@@ -19,7 +19,7 @@ from qiskit.transpiler.exceptions import TranspilerError
 from qiskit.transpiler.passes import BasisTranslator
 from qiskit.circuit.equivalence_library import StandardEquivalenceLibrary as sel
 from qiskit import qasm2
-from .utils import create_scratch_dir
+from .utils import create_scratch_dir, split_circuit
 
 GUOQ_JAR = os.path.join(
     os.path.dirname(__file__), "lib", "GUOQ-1.0-jar-with-dependencies.jar"
@@ -133,7 +133,7 @@ def transpile_if_needed(
     return (approximation, output_path)
 
 
-def run_guoq(
+def run_guoq_single(
     input_path,
     output_path,
     target_gateset,
@@ -243,3 +243,76 @@ def run_guoq(
         # Clean up scratch directory
         if os.path.exists(scratch_dir_path):
             shutil.rmtree(scratch_dir_path)
+
+
+def run_guoq(
+    input_path,
+    output_path,
+    target_gateset,
+    optimization_objective,
+    timeout=3600,
+    approximation_epsilon=0,
+    args=None,
+    verbose=False,
+    path_to_synthetiq=None,
+    threads=1,
+): 
+    assert threads >= 1, "must split into >= 1 chunks to optimize"
+    if threads == 1:
+        run_guoq_single(
+            input_path,
+            output_path,
+            target_gateset,
+            optimization_objective,
+            timeout,
+            approximation_epsilon,
+            args,
+            verbose,
+            path_to_synthetiq,
+        )
+        return
+    else:
+        scratch_dir_path, uid = create_scratch_dir(output_path)
+        chunk_paths = split_circuit(input_path, threads, scratch_dir_path)
+
+        # Build optimized output paths: "optimized_" prepended to chunk filename
+        optimized_paths = [
+            os.path.join(scratch_dir_path, f"optimized_{os.path.basename(p)}")
+            for p in chunk_paths
+        ]
+
+        try:
+            # Optimize each chunk in parallel
+            processes = []
+            for chunk_path, opt_path in zip(chunk_paths, optimized_paths):
+                p = multiprocessing.Process(
+                    target=run_guoq_single,
+                    args=(
+                        chunk_path,
+                        opt_path,
+                        target_gateset,
+                        optimization_objective,
+                        timeout,
+                        approximation_epsilon,
+                        args,
+                        verbose,
+                        path_to_synthetiq,
+                    ),
+                )
+                p.start()
+                processes.append(p)
+
+            for p in processes:
+                p.join()
+
+            # Stitch optimized chunks back together in order
+            combined = QuantumCircuit.from_qasm_file(optimized_paths[0])
+            for opt_path in optimized_paths[1:]:
+                chunk = QuantumCircuit.from_qasm_file(opt_path)
+                combined.compose(chunk, inplace=True)
+
+            qasm2.dump(combined, output_path)
+        finally:
+            # Clean up scratch directory
+            if os.path.exists(scratch_dir_path):
+                shutil.rmtree(scratch_dir_path)
