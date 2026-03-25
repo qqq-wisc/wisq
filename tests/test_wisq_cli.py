@@ -1,7 +1,7 @@
 import pytest
 import subprocess
 import shutil
-from utils import build_random_qasm, is_circuit_equiv, build_random_cliffordt_qasm
+from utils import build_random_qasm, is_circuit_equiv, build_random_cliffordt_qasm, is_circuit_approx_equiv
 from qiskit.qasm2 import load as load_qasm_2, LEGACY_CUSTOM_INSTRUCTIONS
 from pathlib import Path
 import time
@@ -98,7 +98,11 @@ def optimizer_cli_equivalence_test(
     circ_in = load_qasm_2(input_path.as_posix(), custom_instructions=LEGACY_CUSTOM_INSTRUCTIONS)
     circ_out = load_qasm_2(output_path.as_posix(), custom_instructions=LEGACY_CUSTOM_INSTRUCTIONS)
 
-    if not is_circuit_equiv(circ_in, circ_out): # TODO: handle non-exact checks
+    if float(args_dict["approx_epsilon"]) > 0:
+      equiv = is_circuit_approx_equiv(circ_in, circ_out, epsilon=float(args_dict["approx_epsilon"]))
+    else:
+      equiv = is_circuit_equiv(circ_in, circ_out)
+    if not equiv:
       name_header = f"{gateset_name}_{num_qubits}q_{depth}d_{seed}s"
       handle_error_code(name_header, input_path, output_path)
       pytest.fail(
