@@ -4,11 +4,12 @@ import os
 import shutil
 import glob
 import requests
-import random
+import signal
 import sys
 import platform
 import time
 from time import time_ns
+from copy import copy
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TimeElapsedColumn, TextColumn
 
@@ -56,6 +57,39 @@ def is_server_ready():
         return response.status_code == 200
     except requests.exceptions.ConnectionError:
         return False
+    
+
+def get_resynth_proc(args, optimization_objective, verbose, path_to_synthetiq):
+    resynth_proc = None
+    if args.get("-resynth", None) != "NONE":
+        if optimization_objective in ["FT", "T"] and path_to_synthetiq is None:
+            system = platform.system().lower()
+            processor = platform.processor().lower() or platform.machine().lower()
+            if system == "linux" and processor in ["x86_64"]:
+                path_to_synthetiq = f"./bin/main_linux_{processor}"
+            elif system == "darwin" and processor in ["arm", "i386"]:
+                path_to_synthetiq = f"./bin/main_mac_{processor}"
+            else:
+                _console.print(
+                    "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
+                    "Please compile Synthetiq for your platform according to "
+                    "https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234 "
+                    "and pass the [bold]bin/main[/bold] binary absolute path via "
+                    "[bold]--abs_path_to_synthetiq[/bold] or [bold]-apts[/bold]."
+                )
+                sys.exit(1)
+        resynth_proc = start_resynth_server(
+            bqskit="BQSKIT" in args.values()
+            or optimization_objective in ["TWO_Q", "FIDELITY"],
+            verbose=verbose,
+            path_to_synthetiq=path_to_synthetiq,
+        )
+        # Wait for server to spin up
+        with _console.status("    [dim]Starting resynthesis server...[/dim]"):
+            while not is_server_ready():
+                time.sleep(0.1)
+    
+    return resynth_proc
 
 
 def print_help():
@@ -137,12 +171,9 @@ def run_guoq_single(
     input_path,
     output_path,
     target_gateset,
-    optimization_objective,
-    timeout=3600,
-    approximation_epsilon=0,
-    args=None,
-    verbose=False,
-    path_to_synthetiq=None,
+    timeout,
+    approximation_epsilon,
+    args,
 ):
     # Create temporary scratch directory for GUOQ
     scratch_dir_path, uid = create_scratch_dir(output_path)
@@ -159,52 +190,10 @@ def run_guoq_single(
 
         # Write GUOQ args to file
         args_file_path = os.path.join(scratch_dir_path, f"args_{uid}.txt")
-        input_args = args
-        args = {}
-        args["--rules-dir"] = RULES_DIR
-        args["-g"] = target_gateset
-        args["-opt"] = optimization_objective
-        if approximation_epsilon == 0:
-            args["-resynth"] = "NONE"
-        else:
-            args["-eps"] = approximation_epsilon
-        if verbose:
-            args["--verbosity"] = 2
-        if input_args is not None:
-            args.update(input_args)
-        args["-out"] = scratch_dir_path
-        args["-job"] = uid
-        write_args_file(args, args_file_path, transpiled_path)
-
-        # Start resynthesis server if needed
-        resynth_proc = None
-        if args.get("-resynth", None) != "NONE":
-            if optimization_objective in ["FT", "T"] and path_to_synthetiq is None:
-                system = platform.system().lower()
-                processor = platform.processor().lower() or platform.machine().lower()
-                if system == "linux" and processor in ["x86_64"]:
-                    path_to_synthetiq = f"./bin/main_linux_{processor}"
-                elif system == "darwin" and processor in ["arm", "i386"]:
-                    path_to_synthetiq = f"./bin/main_mac_{processor}"
-                else:
-                    _console.print(
-                        "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
-                        "Please compile Synthetiq for your platform according to "
-                        "https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234 "
-                        "and pass the [bold]bin/main[/bold] binary absolute path via "
-                        "[bold]--abs_path_to_synthetiq[/bold] or [bold]-apts[/bold]."
-                    )
-                    sys.exit(1)
-            resynth_proc = start_resynth_server(
-                bqskit="BQSKIT" in args.values()
-                or optimization_objective in ["TWO_Q", "FIDELITY"],
-                verbose=verbose,
-                path_to_synthetiq=path_to_synthetiq,
-            )
-            # Wait for server to spin up
-            with _console.status("    [dim]Starting resynthesis server...[/dim]"):
-                while not is_server_ready():
-                    time.sleep(0.1)
+        extended_args = copy(args)
+        extended_args["-out"] = scratch_dir_path
+        extended_args["-job"] = uid
+        write_args_file(extended_args, args_file_path, transpiled_path)
 
         # Invoke GUOQ
         command = f"java -ea -cp {GUOQ_JAR} qoptimizer.Optimizer @{args_file_path}"
@@ -230,11 +219,6 @@ def run_guoq_single(
                 progress.update(task, completed=int(elapsed))
                 time.sleep(0.5)
             progress.update(task, completed=timeout)
-
-        # Kill resynthesis server
-        if resynth_proc is not None:
-            resynth_proc.terminate()
-            resynth_proc.join()
     finally:
         for source_file in glob.glob(
             os.path.join(scratch_dir_path, f"latest*{uid}*qasm")
@@ -258,30 +242,45 @@ def run_guoq(
     threads=1,
 ): 
     assert threads >= 1, "must split into >= 1 chunks to optimize"
-    if threads == 1:
-        run_guoq_single(
-            input_path,
-            output_path,
-            target_gateset,
-            optimization_objective,
-            timeout,
-            approximation_epsilon,
-            args,
-            verbose,
-            path_to_synthetiq,
-        )
-        return
+
+    input_args = args
+    args = {}
+    args["--rules-dir"] = RULES_DIR
+    args["-g"] = target_gateset
+    args["-opt"] = optimization_objective
+    if approximation_epsilon == 0:
+        args["-resynth"] = "NONE"
     else:
-        scratch_dir_path, uid = create_scratch_dir(output_path)
-        chunk_paths = split_circuit(input_path, threads, scratch_dir_path)
+        args["-eps"] = approximation_epsilon
+    if verbose:
+        args["--verbosity"] = 2
+    if input_args is not None:
+        args.update(input_args)
 
-        # Build optimized output paths: "optimized_" prepended to chunk filename
-        optimized_paths = [
-            os.path.join(scratch_dir_path, f"optimized_{os.path.basename(p)}")
-            for p in chunk_paths
-        ]
+    # Start resynthesis server if needed
+    resynth_proc = get_resynth_proc(args, optimization_objective, verbose, path_to_synthetiq)
+    scratch_dir_path = None
 
-        try:
+    try:
+        if threads == 1:
+            run_guoq_single(
+                input_path,
+                output_path,
+                target_gateset,
+                timeout,
+                approximation_epsilon,
+                args,
+            )
+        else:
+            scratch_dir_path, _ = create_scratch_dir(output_path)
+            chunk_paths = split_circuit(input_path, threads, scratch_dir_path)
+
+            # Build optimized output paths: "optimized_" prepended to chunk filename
+            optimized_paths = [
+                os.path.join(scratch_dir_path, f"optimized_{os.path.basename(p)}")
+                for p in chunk_paths
+            ]
+
             # Optimize each chunk in parallel
             processes = []
             for chunk_path, opt_path in zip(chunk_paths, optimized_paths):
@@ -291,12 +290,9 @@ def run_guoq(
                         chunk_path,
                         opt_path,
                         target_gateset,
-                        optimization_objective,
                         timeout,
                         approximation_epsilon,
                         args,
-                        verbose,
-                        path_to_synthetiq,
                     ),
                 )
                 p.start()
@@ -312,7 +308,27 @@ def run_guoq(
                 combined.compose(chunk, inplace=True)
 
             qasm2.dump(combined, output_path)
-        finally:
-            # Clean up scratch directory
-            if os.path.exists(scratch_dir_path):
-                shutil.rmtree(scratch_dir_path)
+                
+    finally:
+        # Prevent a second KeyboardInterrupt from aborting cleanup
+        old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+        # Terminate any still-running child processes
+        if threads > 1:
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+            for p in processes:
+                p.join(timeout=5)
+
+        # Clean up scratch directory
+        if scratch_dir_path is not None and os.path.exists(scratch_dir_path):
+            shutil.rmtree(scratch_dir_path, ignore_errors=True) # handles subdirectories
+
+        # Kill resynthesis server
+        if resynth_proc is not None:
+            resynth_proc.terminate()
+            resynth_proc.join()
+
+        signal.signal(signal.SIGINT, old_handler)
+    
