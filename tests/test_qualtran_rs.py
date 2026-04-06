@@ -5,6 +5,7 @@ from wisq.qualtran_rotation_synthesis import QualtranRS
 import mpmath
 import qualtran.rotation_synthesis as rs
 from qualtran.rotation_synthesis.channels import UnitaryChannel
+import math
 
 
 def test_qualtran_rs():
@@ -33,3 +34,16 @@ def test_qualtran_rs():
             sequence.append("X")
     
     assert UnitaryChannel.from_sequence(sequence).diamond_norm_distance_to_rz(theta, rs.with_dps(200)) <= mpmath.mpf(epsilon)
+
+
+def test_qualtran_rs_pi2():
+    """Rz(π/2) and other multiples of π/2 are handled via Clifford translator (no T gates)."""
+    pm = PassManager([QualtranRS(1e-10)])
+    for angle in [0.0, math.pi / 2, math.pi, 3 * math.pi / 2]:
+        circuit = QuantumCircuit(1)
+        circuit.rz(angle, 0)
+        transpiled = pm.run(circuit)
+        # Clifford decomposition should not use t or tdg
+        assert "t" not in transpiled.count_ops()
+        assert "tdg" not in transpiled.count_ops()
+        assert transpiled.count_ops().keys() <= {"s", "sdg", "h", "x", "y", "z", "id", "cx"}

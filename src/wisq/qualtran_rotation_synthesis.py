@@ -6,6 +6,9 @@ from qiskit import QuantumCircuit
 import mpmath
 import qualtran.rotation_synthesis as rs
 import sys
+from rich.console import Console
+
+_console = Console()
 
 def sequence_to_circ(sequence : str) -> QuantumCircuit:
     circ = QuantumCircuit(1)
@@ -48,6 +51,7 @@ class QualtranRS(TransformationPass):
         """
         super().__init__()
         self.approx_exp = mpmath.mpf(epsilon)
+        self.pi_over_two = mpmath.pi / 2
         self.qualtran_rs_config = rs.with_dps(200) # good for up to 10-20? increasing makes it slower
         self.max_t = 400
 
@@ -64,7 +68,36 @@ class QualtranRS(TransformationPass):
             if not node.name == "rz":
                 continue  # ignore all non-rz qubit gates
 
-            angle = node.op.params[0]
+            # Use mpmath for consistent high-precision comparison when detecting multiples of π/2.
+            angle = mpmath.mpf(node.op.params[0])
+            remainder = mpmath.fmod(angle, self.pi_over_two)
+            is_clifford = mpmath.almosteq(remainder, 0, abs_eps=1e-12) or mpmath.almosteq(
+                mpmath.fabs(remainder) - self.pi_over_two, 0, abs_eps=1e-12
+            )
+
+            if is_clifford:
+                # Rz(k*π/2) for integer k: build Clifford circuit directly (BasisTranslator
+                # does not have Rz in its equivalence library for these angles).
+                equiv = mpmath.fmod(angle, 2 * mpmath.pi)
+                k = int(mpmath.nint(equiv / self.pi_over_two)) % 4
+                base = QuantumCircuit(1)
+                if k == 1:
+                    base.s(0)
+                elif k == 2:
+                    base.z(0)
+                elif k == 3:
+                    base.sdg(0)
+                # k == 0: identity, no gates
+                dag.substitute_node_with_dag(node, circuit_to_dag(base))
+                continue
+
+            if self.approx_exp == 0:
+                _console.print(
+                                "[bold red]Error:[/bold red] Decomposing to Clifford + T requires non-zero approximation epsilon. "
+                                "Please pass a value strictly between 0 and 1 to "
+                                "[bold]--approx_epsilon[/bold] or [bold]-ap[/bold]."
+                            )
+                sys.exit(1)
 
             diagonal = rs.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
 

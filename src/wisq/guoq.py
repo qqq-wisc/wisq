@@ -127,15 +127,7 @@ def transpile_if_needed(
         return (approximation, input_path)
 
     transpiled = None
-    if target_gateset == CLIFFORDT: # TODO: update when https://github.com/qqq-wisc/wisq/pull/34 merged
-        if approximation_epsilon == 0:
-            _console.print(
-                            "[bold red]Error:[/bold red] Decomposing to Clifford + T requires non-zero approximation epsilon. "
-                            "Please pass a value strictly between 0 and 1 to "
-                            "[bold]--approx_epsilon[/bold] or [bold]-ap[/bold]."
-                        )
-            sys.exit(1)
-
+    if target_gateset == CLIFFORDT:
         pm = PassManager(
             [BasisTranslator(equivalence_library=sel, target_basis=GATE_SETS["NAM"])]
         )
