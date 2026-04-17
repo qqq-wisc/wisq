@@ -3,7 +3,7 @@ from qiskit.transpiler import PassManager
 from qiskit.quantum_info import diamond_norm, Choi, SuperOp
 from wisq.qualtran_rotation_synthesis import QualtranRS
 import mpmath
-from qualtran.rotation_synthesis import math_config as mc
+import qualtran.rotation_synthesis as rs
 from qualtran.rotation_synthesis.channels import UnitaryChannel
 
 
@@ -32,4 +32,4 @@ def test_qualtran_rs():
         elif gate.operation.name == "x":
             sequence.append("X")
     
-    assert UnitaryChannel.from_sequence(sequence).diamond_norm_distance_to_rz(theta, mc.with_dps(200)) <= mpmath.mpf(epsilon)
+    assert UnitaryChannel.from_sequence(sequence).diamond_norm_distance_to_rz(theta, rs.with_dps(200)) <= mpmath.mpf(epsilon)

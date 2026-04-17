@@ -1,0 +1,11 @@
+opt_threads,target_gateset,optimization_objective,opt_timeout,approx_epsilon,architecture,advanced_args,verbose,guoq_help
+1,IBMO,TWO_Q,60,0,square_sparse_layout,,False,False
+1,NAM,FIDELITY,60,0.0,compact_layout,test_advanced_args_1.json,True,False
+1,ION,FIDELITY,60,0,compact_layout,test_advanced_args_1.json,True,False
+1,ION,TWO_Q,60,0,square_sparse_layout,,False,False
+1,NAM,TOTAL,60,0,compact_layout,test_advanced_args_1.json,False,False
+1,NAM,FT,60,0,compact_layout,test_advanced_args_1.json,True,False
+1,ION,FT,60,0.0,square_sparse_layout,test_advanced_args_1.json,True,False
+1,ION,FT,60,0,compact_layout,test_advanced_args_1.json,False,False
+2,IBMO,TWO_Q,60,0,square_sparse_layout,,False,False
+2,IBMN,TWO_Q,60,1e-8,square_sparse_layout,,False,False

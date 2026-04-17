@@ -4,8 +4,7 @@ from qiskit.converters import circuit_to_dag
 from qiskit import qasm2
 from qiskit import QuantumCircuit
 import mpmath
-from qualtran.rotation_synthesis import math_config as mc
-from qualtran.rotation_synthesis.protocols import clifford_t_synthesis as cts
+import qualtran.rotation_synthesis as rs
 import sys
 
 def sequence_to_circ(sequence : str) -> QuantumCircuit:
@@ -49,7 +48,7 @@ class QualtranRS(TransformationPass):
         """
         super().__init__()
         self.approx_exp = mpmath.mpf(epsilon)
-        self.qualtran_rs_config = mc.with_dps(200) # good for up to 10-20? increasing makes it slower
+        self.qualtran_rs_config = rs.with_dps(200) # good for up to 10-20? increasing makes it slower
         self.max_t = 400
 
     def run(self, dag: DAGCircuit) -> DAGCircuit:
@@ -67,12 +66,12 @@ class QualtranRS(TransformationPass):
 
             angle = node.op.params[0]
 
-            diagonal = cts.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
+            diagonal = rs.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
 
             if diagonal is None:
                 raise TranspilerError(f"Could not decompose rotation by angle {angle} within approximation epsilon {self.approx_exp} and max T-count {self.max_t}.")
 
-            sequence = diagonal.to_matrix().to_sequence()
+            sequence = rs.to_sequence(diagonal.to_matrix())
 
             decomposed = sequence_to_circ(sequence)
 

@@ -1,0 +1,7 @@
+target_gateset,optimization_objective,opt_timeout,approx_epsilon,architecture,advanced_args,verbose,guoq_help
+IBMO,TWO_Q,30,1e-1,square_sparse_layout,,False,False
+NAM,FT,30,5e-1,compact_layout,test_advanced_args_1.json,True,False
+ION,FT,30,0.0,square_sparse_layout,test_advanced_args_1.json,True,False
+ION,FT,30,1e-1,compact_layout,test_advanced_args_1.json,False,False
+CLIFFORDT,FT,30,1e-3,compact_layout,test_advanced_args_1.json,False,False
+CLIFFORDT,FT,30,0,compact_layout,test_advanced_args_1.json,False,False
