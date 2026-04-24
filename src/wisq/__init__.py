@@ -161,20 +161,8 @@ def map_and_route(
     the scheduled circuit after mapping and routing to output_path.
     """
     from qiskit import QuantumCircuit
-    from .architecture import square_sparse_layout, compact_layout
-    from .dascot import (
-        extract_gates_from_file,
-        extract_qubits_from_gates,
-        dump,
-        run_dascot,
-        run_sat_scmr,
-    )
 
     circ = QuantumCircuit.from_qasm_file(input_path)
-    gates, ops = extract_gates_from_file(input_path)
-    id_to_op = {i: ops[i] for i in range(len(ops))}
-    total_qubits = len(extract_qubits_from_gates(gates))
-
     circuit_gates = set(circ.count_ops().keys())
     unsupported = circuit_gates - SCMR_ALLOWED_GATES
     if unsupported:
@@ -188,6 +176,19 @@ def map_and_route(
             f"{sorted(unsupported)}. Decompose the circuit first using full_ft mode with "
             "optimization timeout 0, for example:\n  " + suggested
         )
+
+    from .architecture import square_sparse_layout, compact_layout
+    from .dascot import (
+        extract_gates_from_file,
+        extract_qubits_from_gates,
+        dump,
+        run_dascot,
+        run_sat_scmr,
+    )
+
+    gates, ops = extract_gates_from_file(input_path)
+    id_to_op = {i: ops[i] for i in range(len(ops))}
+    total_qubits = len(extract_qubits_from_gates(gates))
 
     if arch_name == "square_sparse_layout":
         arch = square_sparse_layout(total_qubits, magic_states="all_sides")
