@@ -1,10 +1,24 @@
+import math
+
 from qiskit import QuantumCircuit
 from qiskit.transpiler import PassManager
 from qiskit.quantum_info import diamond_norm, Choi, SuperOp
 from wisq.qualtran_rotation_synthesis import QualtranRS
 import mpmath
-import qualtran.rotation_synthesis as rs
+from qualtran.rotation_synthesis import math_config as mc
 from qualtran.rotation_synthesis.channels import UnitaryChannel
+
+
+def test_qualtran_rs_pi2():
+    """Rz(π/2) and other multiples of π/2 use Clifford gates only (issue #31)."""
+    pm = PassManager([QualtranRS(1e-10)])
+    for angle in [0.0, math.pi / 2, math.pi, 3 * math.pi / 2]:
+        circuit = QuantumCircuit(1)
+        circuit.rz(angle, 0)
+        transpiled = pm.run(circuit)
+        assert "t" not in transpiled.count_ops()
+        assert "tdg" not in transpiled.count_ops()
+        assert transpiled.count_ops().keys() <= {"s", "sdg", "h", "x", "y", "z", "id", "cx"}
 
 
 def test_qualtran_rs():
@@ -32,4 +46,4 @@ def test_qualtran_rs():
         elif gate.operation.name == "x":
             sequence.append("X")
     
-    assert UnitaryChannel.from_sequence(sequence).diamond_norm_distance_to_rz(theta, rs.with_dps(200)) <= mpmath.mpf(epsilon)
+    assert UnitaryChannel.from_sequence(sequence).diamond_norm_distance_to_rz(theta, mc.with_dps(200)) <= mpmath.mpf(epsilon)

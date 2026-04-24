@@ -1,13 +1,14 @@
 from qiskit.transpiler import PassManager, TranspilerError, TransformationPass
 from qiskit.dagcircuit import DAGCircuit
 from qiskit.converters import circuit_to_dag
-from qiskit import qasm2
 from qiskit import QuantumCircuit
 import mpmath
-import qualtran.rotation_synthesis as rs
-import sys
+from qualtran.rotation_synthesis import math_config as mc
+from qualtran.rotation_synthesis.protocols import clifford_t_synthesis as cts
+from qualtran.rotation_synthesis.matrix import clifford_t_repr as ctr
 
-def sequence_to_circ(sequence : str) -> QuantumCircuit:
+
+def sequence_to_circ(sequence: str) -> QuantumCircuit:
     circ = QuantumCircuit(1)
     for gate in sequence:
         if gate == "S":
@@ -38,6 +39,7 @@ def sequence_to_circ(sequence : str) -> QuantumCircuit:
             circ.h(0)
     return circ
 
+
 class QualtranRS(TransformationPass):
 
     def __init__(self, epsilon=1e-10) -> None:
@@ -48,8 +50,9 @@ class QualtranRS(TransformationPass):
         """
         super().__init__()
         self.approx_exp = mpmath.mpf(epsilon)
-        self.qualtran_rs_config = rs.with_dps(200) # good for up to 10-20? increasing makes it slower
+        self.qualtran_rs_config = mc.with_dps(200)  # good for up to 10-20? increasing makes it slower
         self.max_t = 400
+        self._pi_over_two = mpmath.pi / 2
 
     def run(self, dag: DAGCircuit) -> DAGCircuit:
         """Run the ``QualtranRS`` pass on `dag`.
@@ -64,14 +67,40 @@ class QualtranRS(TransformationPass):
             if not node.name == "rz":
                 continue  # ignore all non-rz qubit gates
 
-            angle = node.op.params[0]
+            # Use mpmath for consistent high-precision comparison when detecting multiples of π/2.
+            angle = mpmath.mpf(node.op.params[0])
+            remainder = mpmath.fmod(angle, self._pi_over_two)
+            is_clifford = mpmath.almosteq(remainder, 0, abs_eps=1e-12) or mpmath.almosteq(
+                mpmath.fabs(remainder) - self._pi_over_two, 0, abs_eps=1e-12
+            )
+            if is_clifford:
+                # Rz(k*π/2) for integer k: build Clifford circuit directly (issue #31).
+                equiv = mpmath.fmod(angle, 2 * mpmath.pi)
+                k = int(mpmath.nint(equiv / self._pi_over_two)) % 4
+                base = QuantumCircuit(1)
+                if k == 1:
+                    base.s(0)
+                elif k == 2:
+                    base.z(0)
+                elif k == 3:
+                    base.sdg(0)
+                # k == 0: identity, no gates
+                dag.substitute_node_with_dag(node, circuit_to_dag(base))
+                continue
 
-            diagonal = rs.diagonal_unitary_approx(theta=angle, eps=self.approx_exp, max_n=self.max_t, config=self.qualtran_rs_config)
+            diagonal = cts.diagonal_unitary_approx(
+                theta=angle,
+                eps=self.approx_exp,
+                max_n=self.max_t,
+                config=self.qualtran_rs_config,
+            )
 
             if diagonal is None:
-                raise TranspilerError(f"Could not decompose rotation by angle {angle} within approximation epsilon {self.approx_exp} and max T-count {self.max_t}.")
+                raise TranspilerError(
+                    f"Could not decompose rotation by angle {angle} within approximation epsilon {self.approx_exp} and max T-count {self.max_t}."
+                )
 
-            sequence = rs.to_sequence(diagonal.to_matrix())
+            sequence = ctr.to_sequence(diagonal.to_matrix())
 
             decomposed = sequence_to_circ(sequence)
 
