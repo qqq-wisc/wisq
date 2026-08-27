@@ -10,14 +10,6 @@ try:
 except (subprocess.CalledProcessError, FileNotFoundError):
     missing_deps.append("gcc")
 
-try:
-    cmd = "java --version | head -1 | cut -f2 -d' '"
-    output = subprocess.check_output([cmd], shell=True).decode()
-    if int(output.split(".")[0]) < 21:
-        missing_deps.append("java >= 21")
-except (subprocess.CalledProcessError, FileNotFoundError):
-    missing_deps.append("java >= 21")
-
 if missing_deps:
     msg = (
         "Missing required system dependencies: {}\n"

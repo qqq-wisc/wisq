@@ -3,7 +3,6 @@ import multiprocessing
 import os
 import shutil
 import glob
-import requests
 import signal
 import sys
 import platform
@@ -22,10 +21,9 @@ from qiskit.circuit.equivalence_library import StandardEquivalenceLibrary as sel
 from qiskit import qasm2
 from .utils import create_scratch_dir, split_circuit
 
-GUOQ_JAR = os.path.join(
-    os.path.dirname(__file__), "lib", "GUOQ-1.0-jar-with-dependencies.jar"
-)
-RULES_DIR = os.path.join(os.path.dirname(__file__), "lib", "rules")
+LIB_DIR = os.path.join(os.path.dirname(__file__), "lib")
+RULES_DIR = os.path.join(LIB_DIR, "rules")
+SYNTHETIQ_BIN_DIR = os.path.join(LIB_DIR, "synthetiq", "bin")
 
 
 CLIFFORDT = "CLIFFORDT"
@@ -38,66 +36,114 @@ GATE_SETS = {
     "ION": ["rx", "ry", "rz", "rxx"],
 }
 
+# GUOQ's built-in defaults for symbolic rules point at a `generated/` corpus that is
+# synthesized by `queso` and not vendored here; pass the reference corpus we do ship
+# explicitly instead.
+SYMB_RULES = {
+    "NAM": "rules_q3_s3_nam_symb.txt",
+    CLIFFORDT: "rules_q3_s3_cliffordt_symb.txt",
+    "IBMO": "rules_q3_s3_ibm_symb.txt",
+    "IBMN": "rules_q3_s3_ibmnew_symb.txt",
+    "ION": "rules_q3_s3_ion_symb.txt",
+}
+
 ERROR_BUDGET = 2
 
 
-def start_resynth_server(bqskit=False, verbose=False, path_to_synthetiq=None):
-    from .resynth import start_server
+def _platform_binary(prefix, bin_dir):
+    """The bundled binary for this platform, or None if there is none."""
+    system = platform.system().lower()
+    processor = platform.processor().lower() or platform.machine().lower()
+    if system == "linux" and processor in ["x86_64"]:
+        name = f"{prefix}_linux_{processor}"
+    elif system == "darwin" and processor in ["arm", "i386"]:
+        name = f"{prefix}_mac_{processor}"
+    else:
+        return None
+    path = os.path.join(bin_dir, name)
+    return path if os.path.exists(path) else None
 
-    p = multiprocessing.Process(
-        target=start_server, args=(bqskit, True, verbose, path_to_synthetiq)
-    )
-    p.start()
-    return p
 
+def find_guoq_binary():
+    """Locate the GUOQ optimizer binary.
 
-def is_server_ready():
-    try:
-        response = requests.get("http://localhost:8080")
-        return response.status_code == 200
-    except requests.exceptions.ConnectionError:
-        return False
-    
-
-def get_resynth_proc(args, optimization_objective, verbose, path_to_synthetiq):
-    resynth_proc = None
-    if args.get("-resynth", None) != "NONE":
-        if optimization_objective in ["FT", "T"] and path_to_synthetiq is None:
-            system = platform.system().lower()
-            processor = platform.processor().lower() or platform.machine().lower()
-            if system == "linux" and processor in ["x86_64"]:
-                path_to_synthetiq = f"./bin/main_linux_{processor}"
-            elif system == "darwin" and processor in ["arm", "i386"]:
-                path_to_synthetiq = f"./bin/main_mac_{processor}"
-            else:
-                _console.print(
-                    "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
-                    "Please compile Synthetiq for your platform according to "
-                    "https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234 "
-                    "and pass the [bold]bin/main[/bold] binary absolute path via "
-                    "[bold]--abs_path_to_synthetiq[/bold] or [bold]-apts[/bold]."
-                )
-                sys.exit(1)
-        resynth_proc = start_resynth_server(
-            bqskit="BQSKIT" in args.values()
-            or optimization_objective in ["TWO_Q", "FIDELITY"],
-            verbose=verbose,
-            path_to_synthetiq=path_to_synthetiq,
+    Resolution order: the WISQ_GUOQ_BIN environment variable, then the `guoq` pip
+    package (a wisq dependency), then a `guoq` on PATH.
+    """
+    env_path = os.environ.get("WISQ_GUOQ_BIN")
+    if env_path:
+        if os.path.exists(env_path):
+            return env_path
+        _console.print(
+            f"[bold red]Error:[/bold red] WISQ_GUOQ_BIN points to [bold]{env_path}[/bold], "
+            "which does not exist."
         )
-        # Wait for server to spin up
-        with _console.status("    [dim]Starting resynthesis server...[/dim]"):
-            while not is_server_ready():
-                time.sleep(0.1)
-    
-    return resynth_proc
+        sys.exit(1)
+    try:
+        from guoq import find_guoq_bin
+
+        return find_guoq_bin()
+    except (ImportError, FileNotFoundError):
+        pass
+    on_path = shutil.which("guoq")
+    if on_path is not None:
+        return on_path
+    _console.print(
+        "[bold red]Error:[/bold red] No GUOQ binary found. Install it with "
+        "[bold]pip install guoq[/bold], or build the [bold]rust-port[/bold] branch of "
+        "https://github.com/qqq-wisc/guoq with [bold]cargo build --release[/bold] and put "
+        "[bold]target/release/guoq[/bold] on your PATH or point "
+        "[bold]WISQ_GUOQ_BIN[/bold] at it."
+    )
+    sys.exit(1)
+
+
+def backend_args(args, optimization_objective, path_to_synthetiq):
+    """Paths GUOQ needs to drive its resynthesis backends.
+
+    GUOQ owns its backends' lifecycles — it spawns Synthetiq or the BQSKit worker
+    itself — so wisq only has to say where they are.
+    """
+    resynth = args.get("-resynth")
+    uses_synthetiq = resynth == "SYNTHETIQ" or (
+        resynth is None and optimization_objective in ["FT", "T"]
+    )
+    uses_bqskit = resynth == "BQSKIT" or (
+        resynth is None and optimization_objective in ["TWO_Q", "FIDELITY"]
+    )
+
+    extra = {}
+    if uses_synthetiq and "--synthetiq-binary" not in args:
+        path = path_to_synthetiq or _platform_binary("main", SYNTHETIQ_BIN_DIR)
+        if path is None:
+            _console.print(
+                "[bold red]Error:[/bold red] Unsupported platform for pre-compiled Synthetiq. "
+                "Please compile Synthetiq for your platform according to "
+                "https://github.com/eth-sri/synthetiq/tree/bbe3c1299a97295f5af38eec647f6bbe9fdd9234 "
+                "and pass the [bold]bin/main[/bold] binary absolute path via "
+                "[bold]--abs_path_to_synthetiq[/bold] or [bold]-apts[/bold]."
+            )
+            sys.exit(1)
+        extra["--synthetiq-binary"] = os.path.abspath(path)
+    if uses_bqskit and "--bqskit-worker" not in args:
+        try:
+            from guoq import find_bqskit_worker
+
+            extra["--bqskit-worker"] = find_bqskit_worker()
+        except (ImportError, FileNotFoundError):
+            _console.print(
+                "[bold red]Error:[/bold red] BQSKit resynthesis needs the worker script "
+                "bundled with the [bold]guoq[/bold] pip package. Install it with "
+                "[bold]pip install guoq[/bold], or pass [bold]--bqskit-worker[/bold] "
+                "via advanced args."
+            )
+            sys.exit(1)
+        extra["--python"] = sys.executable
+    return extra
 
 
 def print_help():
-    command = f"java -ea -cp {GUOQ_JAR} qoptimizer.Optimizer -h"
-    command_list = command.split(" ")
-    proc = subprocess.Popen(
-        command_list,
-    )
+    proc = subprocess.Popen([find_guoq_binary(), "--help"])
     proc.wait()
 
 
@@ -196,10 +242,8 @@ def run_guoq_single(
         write_args_file(extended_args, args_file_path, transpiled_path)
 
         # Invoke GUOQ
-        command = f"java -ea -cp {GUOQ_JAR} qoptimizer.Optimizer @{args_file_path}"
-        command_list = command.split(" ")
         proc = subprocess.Popen(
-            command_list,
+            [find_guoq_binary(), f"@{args_file_path}"],
         )
         with Progress(
             SpinnerColumn(),
@@ -240,12 +284,14 @@ def run_guoq(
     verbose=False,
     path_to_synthetiq=None,
     threads=1,
-): 
+):
     assert threads >= 1, "must split into >= 1 chunks to optimize"
 
     input_args = args
     args = {}
     args["--rules-dir"] = RULES_DIR
+    if target_gateset in SYMB_RULES:
+        args["-sr"] = os.path.join(RULES_DIR, SYMB_RULES[target_gateset])
     args["-g"] = target_gateset
     args["-opt"] = optimization_objective
     if approximation_epsilon == 0:
@@ -257,8 +303,11 @@ def run_guoq(
     if input_args is not None:
         args.update(input_args)
 
-    # Start resynthesis server if needed
-    resynth_proc = get_resynth_proc(args, optimization_objective, verbose, path_to_synthetiq)
+    # Backend paths are filled in after the merge so advanced args can override both
+    # `-resynth` and the paths themselves.
+    for k, v in backend_args(args, optimization_objective, path_to_synthetiq).items():
+        args.setdefault(k, v)
+
     scratch_dir_path = None
 
     try:
@@ -308,7 +357,7 @@ def run_guoq(
                 combined.compose(chunk, inplace=True)
 
             qasm2.dump(combined, output_path)
-                
+
     finally:
         # Prevent a second KeyboardInterrupt from aborting cleanup
         old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -325,10 +374,5 @@ def run_guoq(
         if scratch_dir_path is not None and os.path.exists(scratch_dir_path):
             shutil.rmtree(scratch_dir_path, ignore_errors=True) # handles subdirectories
 
-        # Kill resynthesis server
-        if resynth_proc is not None:
-            resynth_proc.terminate()
-            resynth_proc.join()
-
         signal.signal(signal.SIGINT, old_handler)
-    
+

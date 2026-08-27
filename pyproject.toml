@@ -16,6 +16,7 @@ name = "wisq"
 version = "0.2.7"
 dependencies = [
     "bqskit",
+    "guoq>=0.1.0,<0.2",
     "numpy",
     "python-sat",
     "pyzx",

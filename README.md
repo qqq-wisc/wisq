@@ -6,7 +6,7 @@
 
 
 # Dependencies
-wisq requires **Python** 3.8, **Java** 21 or later, and **gcc**.
+wisq requires **Python** 3.8 and **gcc**. (The GUOQ circuit optimizer is now a native binary pulled in as the [guoq](https://pypi.org/project/guoq/) pip dependency — Java is no longer required.)
 
 
 # Installation
@@ -37,7 +37,7 @@ uv pip install -e .
 cd src/wisq
    ```
 
-To extend or modify the circuit optimization (GUOQ [1]/QUESO [3]) component of wisq, you will need to clone the [GUOQ repository](https://github.com/qqq-wisc/guoq), make your changes, build, and copy the new JAR to ``lib``. The Python component of GUOQ can be directly modified here in ``src/wisq/resynth.py``.
+The circuit optimizer (GUOQ [1]/QUESO [3]) is a separate package: wisq depends on [guoq](https://pypi.org/project/guoq/), whose wheel installs the native ``guoq`` binary and the BQSKit worker script it spawns. To extend or modify it, clone the ``rust-port`` branch of the [GUOQ repository](https://github.com/qqq-wisc/guoq), make your changes, and either ``pip install .`` there (builds the wheel into your environment) or ``cargo build --release`` and point the ``WISQ_GUOQ_BIN`` environment variable at ``target/release/guoq`` (or put it on your PATH). GUOQ drives its resynthesis backends (Synthetiq, BQSKit) itself, so there is no resynthesis server to start or modify.
 For example, the circuit optimization phase of wisq can be extended to handle new gate sets in this manner.
 
 # Usage
